@@ -3,124 +3,209 @@
   <img src="https://img.shields.io/badge/LangChain-0.3%2B-0B3D91?logo=langchain&logoColor=white" alt="LangChain">
   <img src="https://img.shields.io/badge/Gradio-5.0%2B-FB7185?logo=gradio&logoColor=white" alt="Gradio">
   <img src="https://img.shields.io/badge/ChromaDB-0.5%2B-6D28D9" alt="ChromaDB">
+  <img src="https://img.shields.io/badge/tests-115%20passing-brightgreen" alt="Tests">
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
 </p>
 
-<h1 align="center">CodeBase QA</h1>
+<h1 align="center">CodeBase QA 🧠💬</h1>
 
 <p align="center">
-  Ask questions about any <strong>GitHub repository</strong> in plain English —
-  get answers backed by <strong>real code with file references</strong>.
+  Ever cloned a repo and spent 20 minutes spelunking for <em>one</em> function?<br>
+  Now you can just <strong>ask</strong>.
 </p>
 
-<p align="center"><em>Self-hosted. Runs fully on your machine. Your code never leaves it.</em></p>
+<p align="center">
+  Paste a <strong>GitHub URL</strong>, index it, then chat with your code in
+  plain English — and every answer comes with <strong>real file references</strong>
+  you can click and verify.
+</p>
+
+<p align="center"><em>🛡️ Self-hosted. Runs fully on your machine. Your code never leaves it.</em></p>
 
 ---
 
-## Contents
+## 📚 Table of Contents
 
-- [What It Does](#what-it-does)
-- [Features](#features)
-- [Requirements](#requirements)
-- [Setup Options](#setup-options)
+- [What It Does](#-what-it-does)
+- [Features](#-features)
+- [How It Works](#-how-it-works)
+- [Requirements](#-requirements)
+- [Setup Options](#-setup-options)
   - [Option A — Local with Ollama (Recommended)](#option-a--local-with-ollama-recommended)
   - [Option B — Local with HuggingFace Models](#option-b--local-with-huggingface-models)
   - [Option C — Docker](#option-c--docker)
-- [Configuration](#configuration)
-- [Modes: Quick vs Deep Analysis](#modes-quick-vs-deep-analysis)
-- [How It Works](#how-it-works)
-- [Verify It Works](#verify-it-works)
-- [Troubleshooting](#troubleshooting)
-- [Running Tests & Linting](#running-tests--linting)
-- [Project Structure](#project-structure)
-- [Limitations](#limitations)
-- [Contributing](#contributing)
-- [License](#license)
+- [Configuration](#-configuration)
+- [Modes: Quick vs Deep Analysis](#-modes-quick-vs-deep-analysis)
+- [Verify It Works](#-verify-it-works)
+- [Troubleshooting](#-troubleshooting)
+- [Running Tests & Linting](#-running-tests--linting)
+- [Project Structure](#-project-structure)
+- [Limitations](#-limitations)
+- [Contributing](#-contributing)
+- [License](#-license)
 
 ---
 
-## What It Does
+## 🧐 What It Does
 
-Paste a **GitHub URL**, click **Index Repository**, then ask natural-language
-questions about the code:
+Paste a **GitHub URL**, hit **Index Repository**, and suddenly the whole
+codebase is readable.
 
 ```text
-"What does this project do?"
-"How is authentication handled?"
-"What's the database schema?"
-"Explain the main function in app.py"
+💬 "What does this project do?"
+💬 "How is authentication handled?"
+💬 "What's the database schema?"
+💬 "Explain the main function in app.py"
 ```
 
-The AI reads the **actual code**, then answers with verifiable references:
+The AI reads the **actual code** (not a summary of a summary), then answers
+with verifiable references:
 
-> `[auth.py#L12-L45]` shows the login handler. It uses `passlib` with a
-> bcrypt backend and issues a JWT that expires after 30 minutes.
+> `[auth.py#L12-L45]` shows the login handler. It uses `passlib` with a bcrypt
+> backend and issues a JWT that expires after 30 minutes.
 
-Switch to **Deep Analysis** mode for an agent that searches, reads files, and
-traces definitions across the whole repository on its own.
+Every citation is a clickable breadcrumb — no more trusting the model blindly.
+
+Want more than Q&A? Switch to **Deep Analysis** mode, and an agent will search
+the code, read files, and trace definitions across the whole repository on its
+own — like a junior dev with a flashlight and way too much caffeine ☕.
 
 ---
 
-## Features
+## ✨ Features
 
 | | |
 |---|---|
-| 🧩 **AST-Aware Code Splitting** | Python is split by function/class/import using the `ast` module; JS/TS uses tree-sitter. Chunks are structural, not character-counted. |
+| 🧩 **AST-Aware Code Splitting** | Python is split by function / class / import using the built-in `ast` module; JS/TS uses tree-sitter. Chunks are structural, not character-counted. |
 | 🔗 **Source Links with Line Numbers** | Every answer cites `[file#Lstart-Lend]` references you can click and verify. |
-| ⚡ **Streaming Responses** | Answers appear token-by-token as they're generated. |
-| 💬 **Conversational Follow-ups** | The model remembers your last 20 turns (older ones fold into a rolling summary), so "how does it handle errors?" works after "what's the main function?". |
+| ⚡ **Streaming Responses** | Answers appear token-by-token, like a real chat. No waiting for a wall of text. |
+| 💬 **Conversational Follow-ups** | Remembers your last 20 turns; older ones fold into a rolling summary. "How does it handle errors?" works right after "What's the main function?". |
 | 📝 **Auto-Generated Summary** | After indexing: a one-paragraph overview, tech stack, and entry points. |
 | 📊 **File Stats & Health Indicators** | File/line counts, language breakdown, and README / tests / CI checks. |
-| 🕸️ **Dependency Graph** | Interactive D3.js visualization of file imports — drag, zoom, hover. |
-| 🕵️ **Agentic Analysis** | "Deep Analysis" mode runs a ReAct agent with code-search, file-read, and definition-tracing tools. |
-| 📦 **Export Q&A** | Export any chat session as Markdown or a Jupyter notebook. |
+| 🕸️ **Dependency Graph** | Interactive D3.js visualization of file imports — drag, zoom, hover, gawk. |
+| 🕵️ **Agentic Analysis** | A ReAct agent with code-search, file-read, import, and definition tools. |
+| 📦 **Export Q&A** | Export any session as Markdown or a Jupyter notebook — take your notes with you. |
+| 🔒 **Private by Default** | Everything runs locally. No cloud, no accounts, no code ever leaves your machine. |
 
 ---
 
-## Requirements
+## ⚙️ How It Works
+
+Under the hood it's a classic **Retrieval-Augmented Generation (RAG)**
+pipeline — with a few code-specific twists.
+
+```mermaid
+flowchart LR
+    A["GitHub URL"] --> B["Clone (shallow)"]
+    B --> C["Parse files"]
+    C --> D["AST-aware split"]
+    D --> E["Embed vectors"]
+    E --> F["Store in ChromaDB"]
+    F --> G["User asks a question"]
+    G --> H["Retrieve top-k chunks"]
+    H --> I["Prompt: question + context + history"]
+    I --> J["LLM streams the answer"]
+    J --> K["Answer with [file#L-L] references"]
+```
+
+**Indexing — one time per repo:**
+
+1. **Clone** — shallow-clones the repository into a temp directory (public
+   HTTPS GitHub URLs only, repos up to 50 MB).
+2. **Parse** — walks supported files, collects file stats and health
+   indicators (README, tests, CI/CD).
+3. **Split** — the fun part:
+   - **Python:** `ast` parses the file into real functions, classes, and
+     imports, so a "chunk" is a whole unit of logic — never a mid-`for`-loop
+     cut.
+   - **JS/TS:** tree-sitter does the same structural job.
+   - **Everything else:** falls back to recursive text splitting.
+4. **Embed** — converts each chunk into a vector (`nomic-embed-text` via
+   Ollama, or `all-MiniLM-L6-v2` via HuggingFace).
+5. **Store** — persists the vectors in ChromaDB for fast similarity search.
+
+**Asking — every time you chat:**
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant A as App
+    participant R as Retriever
+    participant C as ChromaDB
+    participant L as LLM
+
+    U->>A: "How is authentication handled?"
+    A->>R: embed the question
+    R->>C: similarity search (top-k)
+    C-->>R: relevant code chunks
+    R-->>A: chunks with file + line metadata
+    A->>L: question + retrieved context + history
+    L-->>A: streamed tokens
+    A-->>U: answer citing [auth.py#L12-L45]
+```
+
+**What makes answers trustworthy:** the model only gets the repo overview, the
+file list, the retrieved chunks, and the conversation history. The prompt
+explicitly forbids guessing — if the answer isn't in the context, it says so
+and points you to the right files instead. Citations come from real line
+metadata, not the model's imagination.
+
+---
+
+## 🛠️ Requirements
 
 | Requirement | Minimum | Check |
 |---|---|---|
-| **Python** | 3.10+ | `python --version` |
-| **pip** | bundled with Python | `python -m pip --version` |
-| **git** | any recent version | `git --version` |
-| **make** | any (Linux/macOS — optional on Windows) | `make --version` |
+| 🐍 **Python** | 3.10+ | `python --version` |
+| 📦 **pip** | bundled with Python | `python -m pip --version` |
+| 🌿 **git** | any recent version | `git --version` |
+| 🔨 **make** | any (Linux/macOS — optional on Windows) | `make --version` |
 
-**Optional (per setup option):**
+**Optional, per setup option:**
 
 | For | Need | Notes |
 |---|---|---|
 | Option A | [Ollama](https://ollama.com) | ~4 GB of model downloads |
 | Option C | [Docker](https://docs.docker.com/get-docker/) | containerized run |
 
-> **Windows users:** `make` isn't bundled with Windows. Use `choco install make`
-> or `scoop install make`, or just run the raw commands shown in each option —
-> the Makefile is a convenience, never a requirement.
+> [!TIP]
+> **Windows users:** `make` isn't bundled with Windows. Use
+> `choco install make` or `scoop install make` — or just run the raw commands
+> shown in each option. The Makefile is a convenience, never a requirement.
 
 ---
 
-## Setup Options
+## 🚀 Setup Options
 
-Three ways to run it. **Option A is the recommended, fastest, and fully
-offline** path.
+Pick your flavor — this diagram decides for you:
+
+```mermaid
+flowchart TD
+    START{"Ollama installed?"} -->|yes| A["✅ Option A: Ollama"]
+    START -->|no| B{"Want zero Python setup?"}
+    B -->|yes| C["🐳 Option C: Docker"]
+    B -->|no| D{"OK with a big model download?"}
+    D -->|yes| E["Option B: HuggingFace"]
+    D -->|no| F["Option A: install Ollama"]
+```
 
 ### Option A — Local with Ollama (Recommended)
 
-Fast (1–3 s responses), free, and private — the LLM and embeddings run on your
-own machine. Requires ~4 GB of disk for the models.
+Fast (1–3 s responses), free, and fully offline — the LLM and embeddings run
+on your machine. Requires ~4 GB of disk for the models.
 
 <details>
-<summary><strong>Step-by-step</strong></summary>
+<summary><strong>Step-by-step 👇</strong></summary>
 
 **1. Install Ollama**
 
 | OS | Command |
 |---|---|
-| Linux | `curl -fsSL https://ollama.com/install.sh \| sh` |
-| macOS | `brew install ollama` (or download from ollama.com) |
-| Windows | Download the installer from https://ollama.com/download |
+| 🐧 Linux | `curl -fsSL https://ollama.com/install.sh \| sh` |
+| 🍎 macOS | `brew install ollama` (or download from ollama.com) |
+| 🪟 Windows | Download the installer from https://ollama.com/download |
 
-Verify: `ollama --version`
+Verify with `ollama --version`.
 
 **2. Pull the models** (once, ~4 GB total)
 
@@ -129,7 +214,7 @@ ollama pull llama3.1
 ollama pull nomic-embed-text
 ```
 
-Check with `ollama list` — you should see both models.
+Check with `ollama list` — you should see both.
 
 **3. Clone and install**
 
@@ -140,7 +225,7 @@ make install          # creates .venv and installs dependencies
 source .venv/bin/activate
 ```
 
-**Windows** instead:
+**Windows?** Use this instead:
 
 ```powershell
 python -m venv .venv
@@ -157,8 +242,8 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-The defaults already target Ollama, so you're done. See
-[Configuration](#configuration) for every available variable.
+Defaults already target Ollama — you're done. See
+[Configuration](#-configuration) for every variable.
 
 **5. Make sure Ollama is running**
 
@@ -166,9 +251,9 @@ The defaults already target Ollama, so you're done. See
 curl http://localhost:11434/api/tags    # should return a JSON list
 ```
 
-- **Linux:** runs as a service after install.
-- **macOS:** `ollama serve` in a separate terminal.
-- **Windows:** runs in the system tray — make sure it's open.
+- 🐧 **Linux:** runs as a service after install.
+- 🍎 **macOS:** `ollama serve` in a separate terminal.
+- 🪟 **Windows:** runs in the system tray — make sure it's open.
 
 **6. Run the app**
 
@@ -176,7 +261,7 @@ curl http://localhost:11434/api/tags    # should return a JSON list
 python app.py        # or: make dev
 ```
 
-Open **http://localhost:7860** and index your first repository.
+Open **http://localhost:7860** and index your first repository. 🎉
 
 </details>
 
@@ -184,21 +269,25 @@ Open **http://localhost:7860** and index your first repository.
 
 ### Option B — Local with HuggingFace Models
 
-No Ollama. Uses HuggingFace transformers — **but note what this means**:
+No Ollama. Uses HuggingFace transformers — **but read this before you pick
+it**:
 
-- The model (`meta-llama/Llama-3.1-8B-Instruct`) is **downloaded to your
-  machine** (~16 GB) and runs **on your CPU**. This is **not** the hosted
-  HuggingFace inference API.
-- Responses are slow on CPU (tens of seconds).
-- **Deep Analysis mode is unavailable here** — the agent needs a provider with
-  native tool-calling, which only the Ollama path supports. Stick with Quick
-  mode for this option.
-- Embeddings use `all-MiniLM-L6-v2` locally (small, ~90 MB).
+> [!WARNING]
+> This is **not** the hosted HuggingFace inference API. The model
+> (`meta-llama/Llama-3.1-8B-Instruct`) is **downloaded to your machine**
+> (~16 GB) and runs **on your CPU**.
+>
+> - Slow on CPU (tens of seconds per answer)
+> - **Deep Analysis mode is unavailable** — the agent needs native
+>   tool-calling, which only the Ollama path supports
+> - Embeddings use `all-MiniLM-L6-v2` locally (small, ~90 MB)
+
+Pick this if you don't want to install Ollama and can wait a bit longer.
 
 <details>
-<summary><strong>Step-by-step</strong></summary>
+<summary><strong>Step-by-step 👇</strong></summary>
 
-**1–3.** Same as Option A (install deps, clone, venv) — skip Ollama entirely.
+**1–3.** Same as Option A (clone, venv, install deps) — skip Ollama entirely.
 
 **4. Configure environment**
 
@@ -220,7 +309,7 @@ python app.py
 ```
 
 Open http://localhost:7860. The first answer downloads the model and may take
-several minutes; subsequent answers are faster.
+a few minutes; subsequent answers are faster.
 
 </details>
 
@@ -228,11 +317,11 @@ several minutes; subsequent answers are faster.
 
 ### Option C — Docker
 
-Everything runs in a container — no Python dependencies on your host. The
-image uses a non-root user and listens on port 7860.
+Everything in a container — no Python dependencies on your host. The image
+uses a non-root user and listens on port 7860.
 
 <details>
-<summary><strong>Build & run</strong></summary>
+<summary><strong>Build & run 👇</strong></summary>
 
 **1. Build the image**
 
@@ -251,7 +340,8 @@ docker run -p 7860:7860 \
   codebase-qa
 ```
 
-> The first answer downloads the ~16 GB model inside the container. For
+> [!NOTE]
+> The first answer downloads the ~16 GB model *inside* the container. For
 > repeated builds, mount a volume for the model cache, or use Ollama on the host.
 
 **3. Or run with a local Ollama** (advanced):
@@ -284,17 +374,16 @@ python app.py
 
 ---
 
-## Configuration
+## 🧪 Configuration
 
 All settings live in a `.env` file (copy from `.env.example`). The defaults
 work out of the box for **Option A (Ollama)**.
 
 On startup the app prints your **effective configuration** to the console, so
-you can always see exactly what your `.env` resolved to (your values plus any
-fallbacks to defaults).
+you always know exactly what your `.env` resolved to (your values plus any
+fallbacks to defaults). No guesswork. 🎯
 
-Your `.env` file should look like this (the defaults work for **Option A —
-Ollama**):
+Your `.env` file should look like this:
 
 ```bash
 # Provider selection: ollama | huggingface
@@ -349,83 +438,66 @@ Here's what each variable does:
   Ollama's tool-calling).
 - **Larger `CHUNK_SIZE`** → fewer, richer chunks; **smaller** → more precise
   retrieval. Start at the defaults.
-- **Higher `RETRIEVAL_K`** → better context for complex questions, slower.
+- **Higher `RETRIEVAL_K`** → better context for complex questions, but slower.
 
 ---
 
-## Modes: Quick vs Deep Analysis
+## ⚡🕵️ Modes: Quick vs Deep Analysis
 
 | Mode | Engine | Speed | Best for |
 |---|---|---|---|
-| **Quick** | RAG chain (retrieve → prompt → LLM) | 1–3 s (Ollama) | Most questions |
-| **Deep Analysis** | ReAct agent with code tools | 10–30 s | Cross-file tracing, "find and explain" investigations |
+| ⚡ **Quick** | RAG chain (retrieve → prompt → LLM) | 1–3 s (Ollama) | Most questions |
+| 🕵️ **Deep Analysis** | ReAct agent with code tools | 10–30 s | Cross-file tracing, "find and explain" investigations |
 
-Deep Analysis gives the agent four tools: **search code** (regex), **read
-file**, **get imports**, and **find definitions**. It requires a provider with
-native tool-calling — currently **Ollama only**.
+Quick mode is your everyday sidekick. Deep Analysis is the detective that
+won't stop until it's sure:
 
-Both modes run on the same indexed repository; switch between them anytime.
+```mermaid
+flowchart TD
+    Q["Deep Analysis question"] --> AG["ReAct agent"]
+    AG -->|search_code| T1["regex search the code"]
+    AG -->|read_file| T2["read lines of a file"]
+    AG -->|get_imports| T3["extract imports"]
+    AG -->|find_definitions| T4["locate a class or function"]
+    T1 --> RES["tool results"]
+    T2 --> RES
+    T3 --> RES
+    T4 --> RES
+    RES --> AG
+    AG -->|finish| ANS["grounded final answer"]
+```
+
+> [!NOTE]
+> Deep Analysis needs a provider with **native tool-calling** — currently
+> **Ollama only**. Both modes run on the same indexed repo; switch anytime.
 
 ---
 
-## How It Works
-
-```
-  GitHub URL
-      │
-      ▼
- ┌──────────┐   ┌─────────┐   ┌──────────────┐   ┌─────────┐   ┌─────────┐
- │  Clone   │──▶│  Parse  │──▶│ AST-aware     │──▶│  Embed  │──▶│ Store   │
- │ (shallow)│   │ walk    │   │ split (AST /  │   │ vectors │   │ ChromaDB│
- └──────────┘   └─────────┘   │ tree-sitter)  │   └─────────┘   └─────────┘
-                              └──────────────┘
-                                                     │
-  User question ──▶ Retrieve top-k chunks ──▶ Prompt ──▶ LLM ──▶ Answer
-                                                        (streamed,
-                                                    with [file#L-L] cites)
-```
-
-1. **Clone** — shallow-clones the repository into a temp directory (public
-   HTTPS GitHub URLs only, repos up to 50 MB).
-2. **Parse** — walks supported files, collects file stats and health
-   indicators (README, tests, CI/CD).
-3. **Split** — Python: AST splits by function/class/import. JS/TS:
-   tree-sitter. Everything else: recursive text splitting.
-4. **Embed** — converts chunks to vectors (Ollama `nomic-embed-text` or
-   `all-MiniLM-L6-v2`).
-5. **Store** — persists vectors in ChromaDB for fast similarity search.
-6. **Query** — retrieves the top-`k` relevant chunks with source metadata.
-7. **Answer** — the LLM streams a grounded response citing
-   `[file#Lstart-Lend]`.
-
----
-
-## Verify It Works
+## ✅ Verify It Works
 
 After the app starts, open http://localhost:7860 and run through this list:
 
-1. **Paste a GitHub URL** — try a small public repo, e.g.
+1. 📥 **Paste a GitHub URL** — try a small public repo, e.g.
    `https://github.com/pallets/click` or `https://github.com/pallets/flask`.
-2. **Click Index Repository** — after a few seconds you should see file
-   counts, a language breakdown, health indicators, and an auto-generated
-   summary.
-3. **Ask "What does this project do?"** — you should get a summary answer
-   with `[file#Lstart-Lend]` references.
-4. **Switch to Deep Analysis** and ask *"Find the main entry point and trace
+2. 🗂️ **Click Index Repository** — after a few seconds you'll see file counts,
+   a language breakdown, health indicators, and an auto-generated summary.
+3. 💬 **Ask "What does this project do?"** — expect a summary answer with
+   `[file#Lstart-Lend]` references.
+4. 🕵️ **Switch to Deep Analysis** and ask *"Find the main entry point and trace
    how it works."* — the agent should search, read, and answer (Ollama only).
-5. **Open the Dependency Graph tab** — you should see an interactive D3.js
-   graph of the repo's files.
-6. **Export a session** — pick "Markdown" (or "Notebook") in the export
-   dropdown and click **Export Chat**; a file should download.
+5. 🕸️ **Open the Dependency Graph tab** — an interactive D3.js graph of the
+   repo's files.
+6. 📦 **Export a session** — pick "Markdown" (or "Notebook") and click
+   **Export Chat**; a file should download.
 
-All six working? You're set.
+All six working? You're set. 🚀
 
 ---
 
-## Troubleshooting
+## 🔧 Troubleshooting
 
 <details>
-<summary><strong>Expand</strong></summary>
+<summary><strong>Expand for the fixes 🔍</strong></summary>
 
 ### "No module named pip"
 
@@ -437,9 +509,9 @@ python -m ensurepip --upgrade
 
 Ollama isn't installed or isn't on your PATH.
 
-- Linux: `curl -fsSL https://ollama.com/install.sh | sh`
-- macOS: `brew install ollama`
-- Windows: download from https://ollama.com/download
+- 🐧 Linux: `curl -fsSL https://ollama.com/install.sh | sh`
+- 🍎 macOS: `brew install ollama`
+- 🪟 Windows: download from https://ollama.com/download
 
 ### "Connection refused" but Ollama is installed
 
@@ -497,7 +569,7 @@ built-in `ast` module, which always works.
 ### Model re-downloads on every Docker run (HuggingFace mode)
 
 The ~16 GB model isn't persisted between containers. Mount a volume for the
-HuggingFace cache, e.g.
+HuggingFace cache:
 
 ```bash
 docker run -p 7860:7860 -v hf-cache:/root/.cache/huggingface \
@@ -514,7 +586,7 @@ make`, or run the raw commands — the Makefile is optional.
 
 ---
 
-## Running Tests & Linting
+## 🧪 Running Tests & Linting
 
 ```bash
 # Activate the venv first, then:
@@ -528,12 +600,26 @@ make format-check      # verify formatting    (or: ruff format --check .)
 make help              # list all targets
 ```
 
-The CI workflow (`.github/workflows/ci.yml`) runs the same `pytest` and
-`ruff` checks on every push.
+> [!TIP]
+> **115 tests**, and CI (`.github/workflows/ci.yml`) runs the same `pytest` +
+> `ruff` checks on every push — the green badge isn't lying.
 
 ---
 
-## Project Structure
+## 🗂️ Project Structure
+
+```mermaid
+flowchart TB
+    APP["app.py"] --> CH["chain.py"]
+    APP --> AG["agent.py"]
+    APP --> RP["repo_parser.py"]
+    APP --> GX["graph.py"]
+    APP --> EX["export.py"]
+    CH --> EM["embeddings.py"]
+    CH --> VS["vectorstore.py"]
+    RP --> CS["code_splitter.py"]
+    CS --> EM
+```
 
 ```
 codebase-qa/
@@ -569,7 +655,7 @@ codebase-qa/
 
 ---
 
-## Limitations
+## ⚠️ Limitations
 
 - **Public repos only** — no GitHub authentication; private repos won't clone.
 - **Repos up to 50 MB** — larger repos are rejected to avoid timeouts.
@@ -582,22 +668,24 @@ codebase-qa/
 
 ---
 
-## Contributing
+## 🤝 Contributing
 
-1. Fork the repository
-2. Create a branch: `git checkout -b feature/amazing-feature`
-3. Run tests: `make test`
-4. Lint and format: `make lint` / `make format`
-5. Commit and push, then open a Pull Request
+1. 🍴 Fork the repository
+2. 🌿 Create a branch: `git checkout -b feature/amazing-feature`
+3. 🧪 Run tests: `make test`
+4. ✨ Lint and format: `make lint` / `make format`
+5. 📤 Commit and push, then open a Pull Request
 
-Bug reports and feature ideas are always welcome.
-
----
-
-## License
-
-[MIT](LICENSE)
+Bug reports and feature ideas are always welcome — good ideas come from
+everywhere. 💡
 
 ---
 
-<p align="center"><em>Built with LangChain, Gradio, and a lot of curiosity.</em></p>
+## 📄 License
+
+[MIT](LICENSE) — do whatever you like, just keep the attribution.
+
+---
+
+<p align="center"><em>Built with LangChain, Gradio, a vector database, and an
+unhealthy amount of curiosity.</em> 🧠</p>
