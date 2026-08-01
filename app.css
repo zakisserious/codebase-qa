@@ -1,0 +1,415 @@
+/* ============================================================
+   CodeBase QA — custom stylesheet
+   Dark-only OLED, code-dark + run-green. All colors/fonts are
+   locked through the --cb-* tokens below.
+   ============================================================ */
+
+:root {
+  --cb-bg-0: #0b1220;
+  --cb-bg-1: #0f172a;
+  --cb-bg-2: #111a2e;
+  --cb-bg-3: #1a2438;
+  --cb-console: #060b14;
+
+  --cb-ink: #e2e8f0;
+  --cb-muted: #94a3b8;
+  --cb-faint: #64748b;
+
+  --cb-accent: #22c55e;
+  --cb-accent-hover: #16a34a;
+  --cb-accent-ink: #04140b;
+
+  --cb-border: rgba(148, 163, 184, 0.16);
+  --cb-border-strong: rgba(148, 163, 184, 0.28);
+
+  --cb-radius: 8px;
+  --cb-radius-lg: 14px;
+
+  --cb-font: "Inter", "ui-sans-serif", "system-ui", "sans-serif";
+  --cb-mono: "JetBrains Mono", "ui-monospace", "SFMono-Regular", "Menlo",
+    "monospace";
+}
+
+body {
+  background: var(--cb-bg-0) !important;
+}
+
+.gradio-container {
+  max-width: 1280px !important;
+  margin: 0 auto !important;
+  padding: 20px 20px 48px !important;
+  background: transparent !important;
+}
+
+/* ------------------------------------------------------------
+   Header (brand)
+   ------------------------------------------------------------ */
+#cb-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 4px 22px;
+}
+
+#cb-header .mark {
+  width: 38px;
+  height: 38px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: var(--cb-radius-lg);
+  border: 1px solid var(--cb-border-strong);
+  background: linear-gradient(160deg, var(--cb-bg-3), var(--cb-bg-1));
+  color: var(--cb-accent);
+}
+
+#cb-header .title {
+  font-size: 19px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  color: var(--cb-ink);
+  line-height: 1.15;
+  font-family: var(--cb-font);
+}
+
+#cb-header .subtitle {
+  font-family: var(--cb-mono);
+  font-size: 11px;
+  color: var(--cb-faint);
+  letter-spacing: 0.02em;
+  margin-top: 2px;
+}
+
+/* ------------------------------------------------------------
+   Layout grid
+   ------------------------------------------------------------ */
+#app-body {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+#sidebar,
+#main {
+  min-width: 0;
+}
+
+#main {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ------------------------------------------------------------
+   Sidebar accordions
+   ------------------------------------------------------------ */
+#sidebar .gr-accordion,
+#sidebar .gradio-accordion {
+  background: var(--cb-bg-1);
+  border: 1px solid var(--cb-border);
+  border-radius: var(--cb-radius);
+  padding: 10px 14px 14px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow-drop);
+}
+
+#sidebar .gr-accordion .label-wrap {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--cb-ink);
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.01em;
+}
+
+#sidebar .gr-accordion .label-wrap .icon {
+  color: var(--cb-muted);
+  font-size: 10px;
+}
+
+#sidebar .gr-accordion .label-wrap:hover {
+  color: var(--cb-accent);
+}
+
+/* ------------------------------------------------------------
+   Inputs inside sidebar
+   ------------------------------------------------------------ */
+#sidebar .wrap input,
+#sidebar .wrap textarea,
+#sidebar .wrap select {
+  font-family: var(--cb-mono) !important;
+  font-size: 12.5px !important;
+}
+
+/* ------------------------------------------------------------
+   Status console
+   ------------------------------------------------------------ */
+#status-output {
+  font-family: var(--cb-mono) !important;
+}
+
+#status-output .wrap {
+  background: var(--cb-console) !important;
+  border: 1px solid var(--cb-border) !important;
+  border-radius: var(--cb-radius) !important;
+  box-shadow: none !important;
+}
+
+#status-output .wrap textarea {
+  background: var(--cb-console) !important;
+  color: #7dd3a0 !important;
+  font-family: var(--cb-mono) !important;
+  font-size: 12px !important;
+  line-height: 1.7 !important;
+  caret-color: var(--cb-accent);
+}
+
+/* ------------------------------------------------------------
+   Segmented radio (Analysis Mode)
+   ------------------------------------------------------------ */
+#mode-toggle .wrap {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  background: var(--cb-bg-2);
+  border: 1px solid var(--cb-border);
+  border-radius: var(--cb-radius);
+  padding: 4px;
+}
+
+#mode-toggle label {
+  justify-content: center;
+  min-height: 40px;
+  border-radius: 6px;
+  font-weight: 500;
+}
+
+#mode-toggle label input {
+  border-radius: 50%;
+}
+
+/* ------------------------------------------------------------
+   Buttons
+   ------------------------------------------------------------ */
+#index-btn {
+  flex: 1;
+}
+#clear-btn {
+  flex: 1;
+}
+
+#sidebar .gr-button,
+#main .gr-button {
+  font-weight: 550;
+  font-size: 13px;
+}
+
+/* ------------------------------------------------------------
+   Tabs
+   ------------------------------------------------------------ */
+#cb-tabs .tab-container button {
+  font-size: 13.5px;
+  font-weight: 550;
+  letter-spacing: 0.01em;
+  padding: 0 20px;
+}
+
+#cb-tabs .tab-container button.selected {
+  color: var(--cb-accent);
+}
+
+/* ------------------------------------------------------------
+   Chat
+   ------------------------------------------------------------ */
+#cb-chatbot {
+  background: var(--cb-bg-1);
+  border: 1px solid var(--cb-border);
+  border-radius: var(--cb-radius);
+}
+
+#cb-chatbot .message-row .message.user {
+  background: rgba(34, 197, 94, 0.14);
+  border-color: rgba(34, 197, 94, 0.32);
+  color: var(--cb-ink);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+#cb-chatbot .message-row .message.bot {
+  background: var(--cb-bg-2);
+  border-color: var(--cb-border);
+  color: var(--cb-ink);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+#cb-chatbot .message-row .message.bot a {
+  color: var(--cb-accent);
+  text-decoration: none;
+}
+
+#cb-chatbot .message-row .message.bot a:hover {
+  text-decoration: underline;
+}
+
+#cb-chatbot .message-row .message.bot code {
+  font-family: var(--cb-mono);
+  font-size: 12.5px;
+  background: rgba(148, 163, 184, 0.12);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+#cb-chatbot .message-row .message.bot pre {
+  background: var(--cb-console) !important;
+  border: 1px solid var(--cb-border);
+  border-radius: 6px;
+}
+
+#cb-chatbot .message-row .message.bot pre code {
+  background: transparent;
+  padding: 0;
+}
+
+/* Composer + sticky behaviour */
+#composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+#composer .gr-textbox {
+  min-width: 0;
+}
+
+#send-btn {
+  min-height: 40px;
+  min-width: 84px;
+}
+
+#clear-chat-btn {
+  min-height: 40px;
+}
+
+/* Examples */
+#cb-examples .examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+#cb-examples .examples .example {
+  min-height: 40px;
+  padding: 6px 14px;
+  border: 1px solid var(--cb-border);
+  border-radius: 999px;
+  background: var(--cb-bg-2);
+  color: var(--cb-muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  transition: border-color 0.18s ease-out, color 0.18s ease-out,
+    transform 0.18s ease-out;
+}
+
+#cb-examples .examples .example:hover {
+  border-color: var(--cb-accent);
+  color: var(--cb-ink);
+  transform: translateY(-1px);
+}
+
+/* Dependency graph */
+#cb-graph {
+  background: var(--cb-bg-1);
+  border: 1px solid var(--cb-border);
+  border-radius: var(--cb-radius);
+  padding: 8px;
+}
+
+/* ------------------------------------------------------------
+   Footer
+   ------------------------------------------------------------ */
+#cb-footer {
+  margin-top: 28px;
+  padding-top: 18px;
+  border-top: 1px solid var(--cb-border);
+  text-align: center;
+}
+
+#cb-footer .line {
+  font-family: var(--cb-mono);
+  font-size: 11.5px;
+  color: var(--cb-faint);
+}
+
+#cb-footer a {
+  color: var(--cb-accent);
+  text-decoration: none;
+}
+
+#cb-footer a:hover {
+  text-decoration: underline;
+}
+
+/* ------------------------------------------------------------
+   Focus visibility
+   ------------------------------------------------------------ */
+.gradio-container :focus-visible {
+  outline: 2px solid var(--cb-accent);
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------
+   Reduced motion
+   ------------------------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ------------------------------------------------------------
+   Mobile: single column, accordion setup, sticky composer
+   ------------------------------------------------------------ */
+@media (max-width: 900px) {
+  .gradio-container {
+    padding: 14px 12px 32px !important;
+  }
+
+  #cb-header {
+    padding-bottom: 14px;
+  }
+
+  #app-body {
+    display: block;
+  }
+
+  #sidebar {
+    margin-bottom: 12px;
+  }
+
+  #main {
+    padding-top: 4px;
+  }
+
+  #cb-chatbot {
+    height: 62vh !important;
+    min-height: 320px;
+  }
+
+  #composer {
+    position: sticky;
+    bottom: 0;
+    z-index: 40;
+    background: var(--cb-bg-0);
+    padding: 12px 0 4px;
+    margin: 4px 0 0;
+  }
+}
