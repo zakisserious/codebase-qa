@@ -80,7 +80,7 @@ own — like a junior dev with a flashlight and way too much caffeine ☕.
 | 🧩 **AST-Aware Code Splitting** | Python is split by function / class / import using the built-in `ast` module; JS/TS uses tree-sitter. Chunks are structural, not character-counted. |
 | 🔗 **Source Links with Line Numbers** | Every answer cites `[file#Lstart-Lend]` references you can click and verify. |
 | ⚡ **Streaming Responses** | Answers appear token-by-token, like a real chat. No waiting for a wall of text. |
-| 💬 **Conversational Follow-ups** | Remembers your last 5 turns; older ones fold into a rolling summary. "How does it handle errors?" works right after "What's the main function?". |
+| 💬 **Conversational Follow-ups** | Remembers your last 20 turns; older ones fold into a rolling summary. "How does it handle errors?" works right after "What's the main function?". |
 | 📝 **Auto-Generated Summary** | After indexing: a one-paragraph overview, tech stack, and entry points. |
 | 📊 **File Stats & Health Indicators** | File/line counts, language breakdown, and README / tests / CI checks. |
 | 🕸️ **Dependency Graph** | Interactive D3.js visualization of file imports — drag, zoom, hover, gawk. |
@@ -410,7 +410,7 @@ ENABLE_AGENT=true
 # Deep Analysis agent: maximum tool-call iterations before forcing a response.
 MAX_AGENT_ITERATIONS=15
 # Recent turns kept verbatim in the prompt; older turns fold into a rolling summary.
-MAX_HISTORY_TURNS=5
+MAX_HISTORY_TURNS=20
 ```
 
 For **Option B (HuggingFace)**, change the first two lines:
@@ -434,7 +434,7 @@ Here's what each variable does:
 | `CHROMA_DIR` | `./chroma_db` | any path | Where ChromaDB stores vectors |
 | `ENABLE_AGENT` | `true` | `true`, `false` | Enable the Deep Analysis agent |
 | `MAX_AGENT_ITERATIONS` | `15` | 1–30 | Max tool-call iterations for Deep Analysis before forcing a response |
-| `MAX_HISTORY_TURNS` | `5` | 1–20 | Conversation turns kept verbatim; older ones fold into a rolling summary |
+| `MAX_HISTORY_TURNS` | `20` | 1–20 | Conversation turns kept verbatim; older ones fold into a rolling summary |
 
 **Rules of thumb:**
 
