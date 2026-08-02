@@ -70,54 +70,68 @@ def clone_and_parse(github_url: str) -> tuple[list[Document], dict]:
 
     try:
         git.Repo.clone_from(repo_url, repo_path, depth=1)
-
-        repo_size = sum(f.stat().st_size for f in Path(repo_path).rglob("*") if f.is_file()) / (1024 * 1024)
-
-        if repo_size > MAX_REPO_SIZE_MB:
-            raise ValueError(f"Repository is {repo_size:.0f}MB, exceeds {MAX_REPO_SIZE_MB}MB limit.")
-
-        documents = []
-        for file_path in Path(repo_path).rglob("*"):
-            if not file_path.is_file():
-                continue
-            if any(skip in file_path.parts for skip in SKIP_DIRS):
-                continue
-            if file_path.suffix not in SUPPORTED_EXTENSIONS:
-                continue
-
-            try:
-                content = file_path.read_text(encoding="utf-8", errors="ignore")
-            except (UnicodeDecodeError, OSError) as e:
-                logger.debug("Skipping %s: %s", file_path, e)
-                continue
-
-            if not content.strip():
-                continue
-
-            relative = file_path.relative_to(repo_path)
-            documents.append(
-                Document(
-                    page_content=content,
-                    metadata={
-                        "source": str(relative),
-                        "repo": repo_name,
-                        "repo_url": github_url.strip().rstrip("/"),
-                    },
-                )
-            )
-
-        if not documents:
-            raise ValueError("No supported files found in repository.")
-
-        stats = _compute_stats(documents)
-        logger.info("Parsed %d files, %d lines", stats["total_files"], stats["total_lines"])
-        return documents, stats
-
+        return _read_repo(Path(repo_path), repo_name, github_url, size_cap_mb=MAX_REPO_SIZE_MB)
     except git.exc.GitCommandError as e:
         raise ValueError(f"Failed to clone repository: {e}") from e
-
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def parse_local(path: str) -> tuple[list[Document], dict]:
+    local_path = Path(path).expanduser().resolve()
+    if not local_path.is_dir():
+        raise ValueError(f"Not a directory: {path}")
+    logger.info("Indexing local directory %s", local_path)
+    return _read_repo(local_path, local_path.name, str(local_path), size_cap_mb=None)
+
+
+def _read_repo(
+    repo_path: Path,
+    repo_name: str,
+    repo_url_meta: str,
+    size_cap_mb: int | None = MAX_REPO_SIZE_MB,
+) -> tuple[list[Document], dict]:
+    if size_cap_mb is not None:
+        repo_size = sum(f.stat().st_size for f in repo_path.rglob("*") if f.is_file()) / (1024 * 1024)
+        if repo_size > size_cap_mb:
+            raise ValueError(f"Repository is {repo_size:.0f}MB, exceeds {size_cap_mb}MB limit.")
+
+    documents = []
+    for file_path in repo_path.rglob("*"):
+        if not file_path.is_file():
+            continue
+        if any(skip in file_path.parts for skip in SKIP_DIRS):
+            continue
+        if file_path.suffix not in SUPPORTED_EXTENSIONS:
+            continue
+
+        try:
+            content = file_path.read_text(encoding="utf-8", errors="ignore")
+        except (UnicodeDecodeError, OSError) as e:
+            logger.debug("Skipping %s: %s", file_path, e)
+            continue
+
+        if not content.strip():
+            continue
+
+        relative = file_path.relative_to(repo_path)
+        documents.append(
+            Document(
+                page_content=content,
+                metadata={
+                    "source": str(relative),
+                    "repo": repo_name,
+                    "repo_url": repo_url_meta.strip().rstrip("/"),
+                },
+            )
+        )
+
+    if not documents:
+        raise ValueError("No supported files found in repository.")
+
+    stats = _compute_stats(documents)
+    logger.info("Parsed %d files, %d lines", stats["total_files"], stats["total_lines"])
+    return documents, stats
 
 
 def _compute_stats(documents: list[Document]) -> dict:

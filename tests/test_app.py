@@ -88,9 +88,10 @@ class TestFormatChatHistory:
     def test_summary_only_when_no_turns(self):
         assert app._format_chat_history([], max_turns=5, summary="s") == ("[Earlier conversation summary]: s")
 
-    def test_default_window_keeps_early_turn(self, clear_history_env):
+    def test_default_window_keeps_recent_turn(self, clear_history_env):
         formatted = app._format_chat_history(make_history(9))
-        assert "q0" in formatted
+        assert "q8" in formatted
+        assert "q0" not in formatted
 
 
 class TestAskQuestionMemory:
@@ -135,6 +136,7 @@ class TestEffectiveConfig:
         "RETRIEVAL_K",
         "CHROMA_DIR",
         "ENABLE_AGENT",
+        "MAX_AGENT_ITERATIONS",
         "MAX_HISTORY_TURNS",
     ]
 
@@ -151,6 +153,7 @@ class TestEffectiveConfig:
             "RETRIEVAL_K": "4",
             "CHROMA_DIR": "./chroma_db",
             "ENABLE_AGENT": "true",
+            "MAX_AGENT_ITERATIONS": "15",
             "MAX_HISTORY_TURNS": "20",
         }
 
@@ -162,6 +165,7 @@ class TestEffectiveConfig:
         assert cfg["LLM_PROVIDER"] == "huggingface"
         assert cfg["CHUNK_SIZE"] == "500"
         assert cfg["ENABLE_AGENT"] == "false"
+        assert cfg["MAX_AGENT_ITERATIONS"] == "15"
         assert cfg["MAX_HISTORY_TURNS"] == "20"
 
 
@@ -203,3 +207,65 @@ class TestRollingSummary:
         history = make_history(21)
         _, summary = list(app.ask_question("q", history, "Quick"))[-1]
         assert summary == "user is Finn"
+
+
+class TestIndexRepo:
+    class _FakeDoc:
+        def __init__(self, source="app.py", repo="myrepo"):
+            self.page_content = "x = 1\n"
+            self.metadata = {"source": source, "repo": repo, "repo_url": "u"}
+
+    @staticmethod
+    def _stats():
+        return {
+            "total_files": 1,
+            "total_lines": 1,
+            "files_by_ext": {".py": 1},
+            "has_readme": True,
+            "has_tests": False,
+            "has_ci": False,
+            "todo_count": 0,
+        }
+
+    def _stub_pipeline(self, monkeypatch):
+        monkeypatch.setenv("ENABLE_AGENT", "false")
+        monkeypatch.setattr(app, "get_embeddings", lambda: object())
+        monkeypatch.setattr(app, "build_store", lambda docs, embeddings: 5)
+        monkeypatch.setattr(app, "get_llm", lambda: object())
+        monkeypatch.setattr(
+            app,
+            "generate_summary",
+            lambda docs, llm: {"description": "d", "technologies": ["python"], "entry_points": ["app.py"]},
+        )
+        monkeypatch.setattr(app, "get_retriever", lambda k=4, embedding_model=None: object())
+        monkeypatch.setattr(app, "build_chain", lambda *args, **kwargs: FakeChain())
+        monkeypatch.setattr(app, "_build_graph", lambda: "<html></html>")
+
+    def test_github_url_branch(self, monkeypatch):
+        self._stub_pipeline(monkeypatch)
+        calls: list = []
+        monkeypatch.setattr(app, "clone_and_parse", lambda url: calls.append(url) or ([self._FakeDoc()], self._stats()))
+
+        status, graph = app.index_repo("https://github.com/user/myrepo")
+
+        assert calls == ["https://github.com/user/myrepo"]
+        assert status.startswith("Indexed successfully!")
+        assert "Repository: myrepo" in status
+        assert graph == "<html></html>"
+
+    def test_local_path_branch(self, monkeypatch, tmp_path):
+        self._stub_pipeline(monkeypatch)
+        (tmp_path / "app.py").write_text("x = 1\n")
+        calls: list = []
+        monkeypatch.setattr(
+            app, "parse_local", lambda path: calls.append(path) or ([self._FakeDoc(repo=tmp_path.name)], self._stats())
+        )
+
+        status, _ = app.index_repo(str(tmp_path))
+
+        assert calls == [str(tmp_path)]
+        assert status.startswith("Indexed successfully!")
+
+    def test_empty_input(self):
+        status, _ = app.index_repo("   ")
+        assert status == "Please enter a GitHub URL or local path."

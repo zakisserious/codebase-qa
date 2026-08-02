@@ -15,7 +15,8 @@
 </p>
 
 <p align="center">
-  Paste a <strong>GitHub URL</strong>, index it, then chat with your code in
+  Paste a <strong>GitHub URL</strong> (or a <strong>local repository path</strong>),
+  index it, then chat with your code in
   plain English — and every answer comes with <strong>real file references</strong>
   you can click and verify.
 </p>
@@ -406,6 +407,8 @@ CHROMA_DIR=./chroma_db
 
 # Features
 ENABLE_AGENT=true
+# Deep Analysis agent: maximum tool-call iterations before forcing a response.
+MAX_AGENT_ITERATIONS=15
 # Recent turns kept verbatim in the prompt; older turns fold into a rolling summary.
 MAX_HISTORY_TURNS=20
 ```
@@ -430,6 +433,7 @@ Here's what each variable does:
 | `RETRIEVAL_K` | `4` | 1–20 | Number of chunks retrieved per query |
 | `CHROMA_DIR` | `./chroma_db` | any path | Where ChromaDB stores vectors |
 | `ENABLE_AGENT` | `true` | `true`, `false` | Enable the Deep Analysis agent |
+| `MAX_AGENT_ITERATIONS` | `15` | 1–30 | Max tool-call iterations for Deep Analysis before forcing a response |
 | `MAX_HISTORY_TURNS` | `20` | 1–20 | Conversation turns kept verbatim; older ones fold into a rolling summary |
 
 **Rules of thumb:**
@@ -479,6 +483,8 @@ After the app starts, open http://localhost:7860 and run through this list:
 
 1. 📥 **Paste a GitHub URL** — try a small public repo, e.g.
    `https://github.com/pallets/click` or `https://github.com/pallets/flask`.
+   Or paste a **local folder path** (e.g. `C:\my-project`) — it's indexed
+   straight from disk, no clone, and without the 50 MB limit.
 2. 🗂️ **Click Index Repository** — after a few seconds you'll see file counts,
    a language breakdown, health indicators, and an auto-generated summary.
 3. 💬 **Ask "What does this project do?"** — expect a summary answer with

@@ -10,7 +10,7 @@ from langchain.agents.output_parsers.tools import (
 from langchain_core.agents import AgentFinish
 from langchain_core.documents import Document
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
@@ -190,11 +190,13 @@ def _parse_tool_call_jsons(content: str) -> list[dict]:
 def _format_scratchpad(intermediate_steps: list) -> list[BaseMessage]:
     messages: list[BaseMessage] = []
     for action, observation in intermediate_steps:
-        tool_call_id = getattr(action, "tool_call_id", None)
-        if tool_call_id:
-            messages.append(ToolMessage(content=str(observation), tool_call_id=tool_call_id))
-        else:
-            messages.append(HumanMessage(content=f"Observation (result of {action.tool}):\n{observation}"))
+        tool_call_id = getattr(action, "tool_call_id", None) or "call_0"
+        messages.append(
+            ToolMessage(
+                content=f"Result of {action.tool}: {observation}",
+                tool_call_id=tool_call_id,
+            )
+        )
     return messages
 
 
@@ -205,7 +207,17 @@ class _OllamaToolCallParser(MultiActionAgentOutputParser):
     (``{"name": ..., "arguments": {...}}``) instead of structured ``tool_calls``.
     This parser handles both forms, falling back to treating the output as a final
     answer when neither is present.
+
+    Only tool names that appear in ``valid_tool_names`` are accepted as actions;
+    unrecognized names are treated as part of the final answer, preventing
+    hallucinated tool calls from crashing the agent.
     """
+
+    _valid_tool_names: set[str] | None = None
+
+    def __init__(self, valid_tool_names: set[str] | None = None, **kwargs):
+        super().__init__(**kwargs)
+        object.__setattr__(self, "_valid_tool_names", valid_tool_names)
 
     @property
     def _type(self) -> str:
@@ -229,10 +241,14 @@ class _OllamaToolCallParser(MultiActionAgentOutputParser):
         if data_list:
             actions = []
             for data in data_list:
-                log = f"\nInvoking: `{data['name']}` with `{data['arguments']}`\n"
+                tool_name = data["name"]
+                valid = self._valid_tool_names
+                if valid is not None and tool_name not in valid:
+                    return AgentFinish(return_values={"output": content}, log=str(content))
+                log = f"\nInvoking: `{tool_name}` with `{data['arguments']}`\n"
                 actions.append(
                     ToolAgentAction(
-                        tool=data["name"],
+                        tool=tool_name,
                         tool_input=data["arguments"],
                         log=log,
                         message_log=[message],
@@ -251,6 +267,7 @@ def build_agent(llm: BaseChatModel, documents: list[Document]):
 
     tools_instance = AgentTools(documents)
     tools = tools_instance.get_tools()
+    tool_names = {t.name for t in tools}
 
     prompt = ChatPromptTemplate.from_messages(
         [
@@ -258,28 +275,25 @@ def build_agent(llm: BaseChatModel, documents: list[Document]):
                 "system",
                 """You are a code analysis agent with access to tools that let you search, read, and analyze code in an indexed repository.
 
-Use these tools to investigate the user's question thoroughly. Always cite file paths and line numbers.
+You have the following tools available:
+{tools}
 
-When you need to call a tool, respond with a single JSON object in the following format (and nothing else):
-
-{{"name": "<tool name>", "arguments": {{"<arg name>": "<value>"}}}}
-
-When you have enough information to answer, respond directly with the final answer.
+INSTRUCTIONS:
+- For each question, use at least one tool to investigate before answering.
+- Start by using `get_file_tree` to understand the repository structure, then use `search_code`, `read_file`, `find_definitions`, or `get_imports` to find relevant code.
+- Always cite file paths and line numbers in your final answer.
+- When you have enough information to answer, respond with a final answer — do not call any more tools.
 
 Previous conversation:
 {history}
 
-Use the previous conversation to answer follow-ups; do not claim you lack memory of this chat.
-
-Available tools:
-{tools}""",
+Use the previous conversation to answer follow-ups; do not claim you lack memory of this chat.""",
             ),
             ("human", "{input}"),
             ("placeholder", "{agent_scratchpad}"),
         ]
     ).partial(
         tools=render_text_description(tools),
-        history="No previous conversation.",
     )
 
     llm_with_tools = llm.bind_tools(tools)
@@ -290,7 +304,7 @@ Available tools:
         )
         | prompt
         | llm_with_tools
-        | _OllamaToolCallParser()
+        | _OllamaToolCallParser(valid_tool_names=tool_names)
     )
     object.__setattr__(agent, "tools", tools)
     return agent

@@ -6,6 +6,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.retrievers import BaseRetriever
+from langchain_core.runnables import RunnableLambda
 from langchain_huggingface import ChatHuggingFace, HuggingFacePipeline
 from langchain_ollama import ChatOllama
 
@@ -17,8 +18,6 @@ SYSTEM_PROMPT = """You are a code assistant. Answer the user's question based on
 
 Cite your sources using this exact format:
   [filename#L{{start_line}}-{{end_line}}]
-
-Example: [auth.py#L12-L45] shows the login handler implementation.
 
 Repository overview:
 {repo_overview}
@@ -35,7 +34,7 @@ Grounding rules:
 - The file list above is the complete set of indexed files, so a listed file exists in the repository even if its content is not among the retrieved code snippets. In that case, say the file exists but its contents were not retrieved, and suggest switching to Deep Analysis.
 - Never repeat the conversation history or the "[Earlier conversation summary]" marker in your answer; use the history only to inform your response.
 - Never claim a file exists or does not exist unless it is listed in the file list.
-- If the retrieved code is insufficient for the question, say so clearly and point at relevant files from the file list instead of guessing.
+- If NO relevant code was retrieved, respond with exactly: "I cannot find specific code for this question in the indexed repository." Then suggest 2-3 candidate files from the file list above, or recommend switching to Deep Analysis mode.
 
 Conversation history (the real previous messages of this chat, in order, including any "[Earlier conversation summary]" line, which summarizes turns older than the window shown above):
 
@@ -71,6 +70,8 @@ def get_llm() -> BaseChatModel:
 
 
 def _format_docs(docs: list) -> str:
+    if not docs:
+        return "[No relevant code was retrieved for this question. Base your answer on the file list above and direct the user to candidate files or Deep Analysis mode.]"
     formatted: list[str] = []
     for doc in docs:
         source = doc.metadata.get("source", "unknown")
@@ -111,7 +112,11 @@ def build_chain(
 
     chain = (
         {
-            "context": itemgetter("question") | retriever | _format_docs,
+            "context": (
+                RunnableLambda(lambda x: f"{x.get('question', '')} [history: {x.get('history', '')}]")
+                | retriever
+                | _format_docs
+            ),
             "question": itemgetter("question"),
             "history": itemgetter("history"),
         }

@@ -8,7 +8,7 @@ from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.runnables import RunnableLambda
 
-from rag.chain import _format_docs, _truncate_file_tree, build_chain, get_llm
+from rag.chain import SYSTEM_PROMPT, _format_docs, _truncate_file_tree, build_chain, get_llm
 
 
 class TestGetLLM:
@@ -65,6 +65,18 @@ class TestFormatDocs:
         result = _format_docs(docs)
         assert "FunctionDef: foo" in result
 
+    def test_empty_docs_returns_no_results_signal(self):
+        result = _format_docs([])
+        assert "No relevant code was retrieved" in result
+
+
+class TestSystemPrompt:
+    def test_no_citation_example_line(self):
+        assert "Example: [auth.py#L12-L45]" not in SYSTEM_PROMPT
+
+    def test_strengthened_grounding_rule(self):
+        assert "I cannot find specific code for this question" in SYSTEM_PROMPT
+
 
 class TestBuildChain:
     def test_build_chain_returns_chain(self):
@@ -98,7 +110,7 @@ class TestBuildChain:
         retriever = RunnableLambda(fake_retrieve)
         chain = build_chain(retriever, llm=FakeChatModel())
         chain.invoke({"question": "How does login work?", "history": "None"})
-        assert received["query"] == "How does login work?"
+        assert received["query"] == "How does login work? [history: None]"
 
     def test_defaults_when_context_not_provided(self):
         class CapturingChatModel(BaseChatModel):

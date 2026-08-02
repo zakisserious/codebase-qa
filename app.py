@@ -29,6 +29,7 @@ def _effective_config() -> dict[str, str]:
         "RETRIEVAL_K": os.getenv("RETRIEVAL_K", "4"),
         "CHROMA_DIR": os.getenv("CHROMA_DIR", "./chroma_db"),
         "ENABLE_AGENT": os.getenv("ENABLE_AGENT", "true"),
+        "MAX_AGENT_ITERATIONS": os.getenv("MAX_AGENT_ITERATIONS", "15"),
         "MAX_HISTORY_TURNS": os.getenv("MAX_HISTORY_TURNS", "20"),
     }
 
@@ -54,6 +55,7 @@ from rag import (  # noqa: E402
     get_embeddings,
     get_llm,
     get_retriever,
+    parse_local,
     render_graph_html,
     validate_github_url,
 )
@@ -74,7 +76,7 @@ class AppState:
 state = AppState()
 
 
-def _format_chat_history(history: list[dict], max_turns: int = 20, summary: str = "") -> str:
+def _format_chat_history(history: list[dict], max_turns: int = 5, summary: str = "") -> str:
     max_turns = int(os.getenv("MAX_HISTORY_TURNS", str(max_turns)))
     lines: list[str] = []
     if summary:
@@ -113,17 +115,20 @@ def _update_conversation_summary(history: list[dict], summary: str = "") -> str:
     return _summarize_conversation(state.llm, summary, text)
 
 
-def index_repo(github_url: str) -> tuple[str, str]:
-    if not github_url.strip():
-        return "Please enter a GitHub URL.", ""
+def index_repo(source: str) -> tuple[str, str]:
+    if not source.strip():
+        return "Please enter a GitHub URL or local path.", ""
 
     try:
-        validate_github_url(github_url)
+        if Path(source).expanduser().is_dir():
+            docs, stats = parse_local(source)
+        else:
+            validate_github_url(source)
+            docs, stats = clone_and_parse(source)
     except ValueError as e:
         return str(e), ""
 
     try:
-        docs, stats = clone_and_parse(github_url)
         state.documents = docs
 
         state.embeddings = get_embeddings()
@@ -158,12 +163,19 @@ def index_repo(github_url: str) -> tuple[str, str]:
         if os.getenv("ENABLE_AGENT", "true").lower() == "true":
             try:
                 agent = build_agent(state.llm, state.documents)
-                state.agent_executor = AgentExecutor(agent=agent, tools=agent.tools, verbose=False, max_iterations=5)
+                state.agent_executor = AgentExecutor(
+                    agent=agent,
+                    tools=agent.tools,
+                    verbose=False,
+                    max_iterations=int(os.getenv("MAX_AGENT_ITERATIONS", "15")),
+                    handle_parsing_errors=True,
+                    handle_tool_errors=True,
+                )
             except Exception as e:
                 logger.warning("Agent initialization failed: %s", e)
                 state.agent_executor = None
 
-        repo_name = github_url.strip().rstrip("/").split("/")[-1]
+        repo_name = docs[0].metadata["repo"]
         state.indexed_repo = repo_name
 
         lang_str = ", ".join(
@@ -295,8 +307,8 @@ with gr.Blocks(
         with gr.Column(scale=1, elem_id="sidebar"):
             with gr.Accordion("Repository", open=True, elem_id="cb-repo-accordion"):
                 github_url = gr.Textbox(
-                    label="GitHub Repository URL",
-                    placeholder="https://github.com/user/repo",
+                    label="Repository URL or Local Path",
+                    placeholder="https://github.com/user/repo or a local path, e.g. C:\\my\\repo",
                 )
                 with gr.Row():
                     index_btn = gr.Button("Index Repository", variant="primary", elem_id="index-btn")

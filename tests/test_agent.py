@@ -1,10 +1,14 @@
+from contextlib import suppress
+from typing import ClassVar
 from unittest.mock import MagicMock
 
 import pytest
+from langchain.agents import AgentExecutor
 from langchain_core.agents import AgentFinish
 from langchain_core.documents import Document
-from langchain_core.messages import AIMessage
-from langchain_core.outputs import ChatGeneration
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage, SystemMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
 
 from rag.agent import (
     AgentTools,
@@ -16,6 +20,23 @@ from rag.agent import (
 
 def generation(text: str) -> list[ChatGeneration]:
     return [ChatGeneration(message=AIMessage(content=text))]
+
+
+class _FakeAgentLLM(BaseChatModel):
+    """Captures rendered messages and supports bind_tools for agent testing."""
+
+    last_messages: ClassVar[list] = []
+
+    @property
+    def _llm_type(self) -> str:
+        return "fake-agent-llm"
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
+        _FakeAgentLLM.last_messages = list(messages)
+        return ChatResult(generations=[ChatGeneration(message=AIMessage(content="done"))])
+
+    def bind_tools(self, tools, **kwargs):
+        return self
 
 
 @pytest.fixture
@@ -111,7 +132,7 @@ class TestBuildAgent:
         docs = [Document(page_content="def foo(): pass", metadata={"source": "a.py"})]
         agent = build_agent(mock_llm, docs)
         prompt = agent.steps[1]
-        messages = prompt.format_messages(input="hello", agent_scratchpad=[])
+        messages = prompt.format_messages(input="hello", history="No previous conversation.", agent_scratchpad=[])
         assert any("hello" in m.content for m in messages)
 
 
@@ -166,3 +187,56 @@ class TestOllamaToolCallParser:
         result = parser.parse_result(generation("The answer is 42"))
         assert isinstance(result, AgentFinish)
         assert result.return_values["output"] == "The answer is 42"
+
+    def test_invalid_tool_name_becomes_finish(self):
+        parser = _OllamaToolCallParser(valid_tool_names={"search_code", "read_file"})
+        result = parser.parse_result(generation('{"name": "Finn", "arguments": {"foo": "bar"}}'))
+        assert isinstance(result, AgentFinish)
+        assert result.return_values["output"] == '{"name": "Finn", "arguments": {"foo": "bar"}}'
+
+    def test_valid_tool_name_becomes_action(self):
+        parser = _OllamaToolCallParser(valid_tool_names={"search_code", "read_file"})
+        actions = parser.parse_result(generation('{"name": "search_code", "arguments": {"pattern": "login"}}'))
+        assert len(actions) == 1
+        assert actions[0].tool == "search_code"
+
+
+class TestAgentMemory:
+    def test_history_reaches_system_prompt(self):
+        mock_llm = _FakeAgentLLM()
+        docs = [Document(page_content="def foo(): pass", metadata={"source": "a.py"})]
+        agent = build_agent(mock_llm, docs)
+
+        with suppress(Exception):
+            agent.invoke({"input": "hi", "history": "MY REAL HISTORY TEXT", "intermediate_steps": []})
+
+        system_msgs = [m for m in _FakeAgentLLM.last_messages if isinstance(m, SystemMessage)]
+        assert system_msgs, "No system message was captured by the LLM"
+        assert any("MY REAL HISTORY TEXT" in m.content for m in system_msgs), (
+            "Conversation history was not injected into the system prompt"
+        )
+        assert not any("{history}" in m.content for m in system_msgs), (
+            "Literal '{history}' placeholder left in system prompt"
+        )
+
+    def test_history_reaches_via_agent_executor(self):
+        mock_llm = _FakeAgentLLM()
+        docs = [Document(page_content="def foo(): pass", metadata={"source": "a.py"})]
+        agent = build_agent(mock_llm, docs)
+
+        executor = AgentExecutor(
+            agent=agent,
+            tools=agent.tools,
+            max_iterations=1,
+            handle_parsing_errors=True,
+            handle_tool_errors=True,
+        )
+
+        with suppress(Exception):
+            executor.invoke({"input": "test", "history": "AGENT EXECUTOR HISTORY"})
+
+        system_msgs = [m for m in _FakeAgentLLM.last_messages if isinstance(m, SystemMessage)]
+        assert system_msgs, "No system message was captured by the LLM"
+        assert any("AGENT EXECUTOR HISTORY" in m.content for m in system_msgs), (
+            "Conversation history was not injected into the system prompt via AgentExecutor"
+        )

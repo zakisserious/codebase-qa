@@ -1,7 +1,7 @@
 import pytest
 from langchain_core.documents import Document
 
-from rag.repo_parser import _compute_stats, _parse_github_url, validate_github_url
+from rag.repo_parser import _compute_stats, _parse_github_url, parse_local, validate_github_url
 
 
 class TestValidateGithubUrl:
@@ -76,3 +76,53 @@ class TestComputeStats:
         ]
         stats = _compute_stats(docs)
         assert stats["has_ci"] is True
+
+
+class TestParseLocal:
+    def test_basic_local(self, tmp_path):
+        (tmp_path / "app.py").write_text("import os\n\ndef main():\n    pass\n")
+        (tmp_path / "README.md").write_text("# Hello\n")
+
+        docs, stats = parse_local(str(tmp_path))
+
+        sources = {doc.metadata["source"] for doc in docs}
+        assert sources == {"app.py", "README.md"}
+        assert stats["total_files"] == 2
+        assert stats["total_lines"] > 0
+
+    def test_respects_skip_dirs(self, tmp_path):
+        (tmp_path / "app.py").write_text("import os\n")
+        nested = tmp_path / "node_modules"
+        nested.mkdir()
+        (nested / "lib.js").write_text("export const x = 1;\n")
+
+        docs, _ = parse_local(str(tmp_path))
+
+        sources = {doc.metadata["source"] for doc in docs}
+        assert "app.py" in sources
+        assert not any("node_modules" in source for source in sources)
+
+    def test_filters_unsupported_extensions(self, tmp_path):
+        (tmp_path / "app.py").write_text("import os\n")
+        (tmp_path / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+
+        docs, _ = parse_local(str(tmp_path))
+
+        sources = {doc.metadata["source"] for doc in docs}
+        assert sources == {"app.py"}
+
+    def test_missing_path_raises(self, tmp_path):
+        with pytest.raises(ValueError, match="Not a directory"):
+            parse_local(str(tmp_path / "does-not-exist"))
+
+    def test_empty_dir_raises(self, tmp_path):
+        with pytest.raises(ValueError, match="No supported files found"):
+            parse_local(str(tmp_path))
+
+    def test_repo_metadata(self, tmp_path):
+        (tmp_path / "app.py").write_text("import os\n")
+
+        docs, _ = parse_local(str(tmp_path))
+
+        assert docs[0].metadata["repo"] == tmp_path.name
+        assert docs[0].metadata["repo_url"] == str(tmp_path.resolve())
