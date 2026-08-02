@@ -27,23 +27,20 @@
 
 ## 📚 Table of Contents
 
-- [What It Does](#-what-it-does)
-- [Features](#-features)
-- [How It Works](#-how-it-works)
-- [Requirements](#-requirements)
-- [Setup Options](#-setup-options)
-  - [Option A — Local with Ollama (Recommended)](#option-a--local-with-ollama-recommended)
-  - [Option B — Local with HuggingFace Models](#option-b--local-with-huggingface-models)
-  - [Option C — Docker](#option-c--docker)
-- [Configuration](#-configuration)
-- [Modes: Quick vs Deep Analysis](#-modes-quick-vs-deep-analysis)
-- [Verify It Works](#-verify-it-works)
-- [Troubleshooting](#-troubleshooting)
-- [Running Tests & Linting](#-running-tests--linting)
-- [Project Structure](#-project-structure)
-- [Limitations](#-limitations)
-- [Contributing](#-contributing)
-- [License](#-license)
+- [What It Does](#what-it-does)
+- [Features](#features)
+- [How It Works](#how-it-works)
+- [Requirements](#requirements)
+- [Setup Options](#setup-options)
+- [Configuration](#configuration)
+- [Modes: Quick vs Deep Analysis](#modes-quick-vs-deep-analysis)
+- [Verify It Works](#verify-it-works)
+- [Troubleshooting](#troubleshooting)
+- [Running Tests & Linting](#running-tests--linting)
+- [Project Structure](#project-structure)
+- [Limitations](#limitations)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
