@@ -110,7 +110,7 @@ class TestBuildChain:
         retriever = RunnableLambda(fake_retrieve)
         chain = build_chain(retriever, llm=FakeChatModel())
         chain.invoke({"question": "How does login work?", "history": "None"})
-        assert received["query"] == "How does login work? [history: None]"
+        assert received["query"] == "How does login work?"
 
     def test_defaults_when_context_not_provided(self):
         class CapturingChatModel(BaseChatModel):

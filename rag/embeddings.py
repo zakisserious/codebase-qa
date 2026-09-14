@@ -2,7 +2,7 @@ import logging
 import os
 
 from langchain_core.embeddings import Embeddings
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
 from langchain_ollama import OllamaEmbeddings
 
 logger = logging.getLogger(__name__)
@@ -19,6 +19,13 @@ def get_embeddings() -> Embeddings:
         return HuggingFaceEmbeddings(
             model_name="all-MiniLM-L6-v2",
             model_kwargs={"device": "cpu"},
+        )
+
+    if provider == "huggingface_api":
+        return HuggingFaceEndpointEmbeddings(
+            model="sentence-transformers/all-MiniLM-L6-v2",
+            task="feature-extraction",
+            huggingfacehub_api_token=os.getenv("HF_TOKEN"),
         )
 
     raise ValueError(f"Unknown embedding provider: {provider}")

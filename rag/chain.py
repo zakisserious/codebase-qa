@@ -9,6 +9,7 @@ from langchain_core.retrievers import BaseRetriever
 from langchain_core.runnables import RunnableLambda
 from langchain_huggingface import ChatHuggingFace, HuggingFacePipeline
 from langchain_ollama import ChatOllama
+from langchain_openai import ChatOpenAI
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,14 @@ def get_llm() -> BaseChatModel:
         )
         return ChatHuggingFace(llm=pipe)
 
+    if provider == "huggingface_api":
+        return ChatOpenAI(
+            model=os.getenv("HF_MODEL", "Qwen/Qwen2.5-7B-Instruct"),
+            openai_api_key=os.getenv("HF_TOKEN"),
+            base_url="https://router.huggingface.co/v1",
+            temperature=0.2,
+        )
+
     raise ValueError(f"Unknown LLM provider: {provider}")
 
 
@@ -112,11 +121,7 @@ def build_chain(
 
     chain = (
         {
-            "context": (
-                RunnableLambda(lambda x: f"{x.get('question', '')} [history: {x.get('history', '')}]")
-                | retriever
-                | _format_docs
-            ),
+            "context": (RunnableLambda(lambda x: x.get("question", "")) | retriever | _format_docs),
             "question": itemgetter("question"),
             "history": itemgetter("history"),
         }
