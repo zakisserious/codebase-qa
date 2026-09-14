@@ -7,14 +7,15 @@ from rag.vectorstore import build_store, clear_store
 
 class TestBuildStore:
     @patch("rag.vectorstore.chromadb")
-    @patch("rag.vectorstore.Chroma")
-    @patch("rag.vectorstore.split_documents")
-    def test_build_store_returns_count(self, mock_split, mock_chroma, mock_chroma_mod):
-        mock_split.return_value = [Document(page_content="x", metadata={"source": "a.py"})]
+    def test_build_store_returns_total_count(self, mock_chroma, monkeypatch, tmp_path, fake_embeddings):
+        monkeypatch.setattr("rag.vectorstore.CHROMA_DIR", str(tmp_path))
         mock_client = MagicMock()
-        mock_chroma_mod.PersistentClient.return_value = mock_client
+        mock_chroma.PersistentClient.return_value = mock_client
 
-        count = build_store([Document(page_content="x", metadata={"source": "a.py"})], MagicMock())
+        count = build_store(
+            [Document(page_content="x", metadata={"source": "a.py"})],
+            fake_embeddings,
+        )
         assert count == 1
 
     @patch("rag.vectorstore.shutil")

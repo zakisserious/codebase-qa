@@ -1,5 +1,35 @@
+import math
+
 import pytest
 from langchain_core.documents import Document
+
+
+class FakeEmbeddings:
+    """Deterministic, offline embeddings for store/search tests."""
+
+    def __init__(self, dim: int = 8):
+        self.dim = dim
+        self._terms = ["login", "auth", "users", "token", "api", "config", "test", "main"]
+
+    def _vec(self, text: str) -> list[float]:
+        v = [0.0] * self.dim
+        lower = text.lower()
+        for i, term in enumerate(self._terms):
+            if term in lower:
+                v[i] = 1.0 + min(len(text) / 10000.0, 0.5)
+        norm = math.sqrt(sum(x * x for x in v)) or 1.0
+        return [x / norm for x in v]
+
+    def embed_documents(self, texts):
+        return [self._vec(t) for t in texts]
+
+    def embed_query(self, text):
+        return self._vec(text)
+
+
+@pytest.fixture
+def fake_embeddings():
+    return FakeEmbeddings()
 
 
 @pytest.fixture
