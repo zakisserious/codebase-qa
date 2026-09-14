@@ -25,6 +25,7 @@ SUPPORTED_EXTENSIONS = {
     ".yaml",
     ".yml",
     ".toml",
+    ".rs",
 }
 
 SKIP_DIRS = {
@@ -37,6 +38,7 @@ SKIP_DIRS = {
     ".venv",
     "venv",
     ".env",
+    "target",
 }
 
 MAX_REPO_SIZE_MB = 50
