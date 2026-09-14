@@ -27,7 +27,7 @@ format-check:  ## Check formatting without fixing
 	ruff format --check .
 
 dev:  ## Run the app locally
-	python app.py
+	python server.py
 
 clean:  ## Remove build artifacts
 	rm -rf .venv __pycache__ **/__pycache__ .pytest_cache chroma_db dist build
