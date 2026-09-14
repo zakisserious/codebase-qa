@@ -1,9 +1,11 @@
+import contextlib
+import json
 import logging
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
-import gradio as gr
 from dotenv import load_dotenv
 from langchain.agents import AgentExecutor
 
@@ -14,6 +16,8 @@ logging.basicConfig(
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+index_progress: dict[str, str] = {"phase": ""}
 
 
 def _effective_config() -> dict[str, str]:
@@ -30,7 +34,7 @@ def _effective_config() -> dict[str, str]:
         "CHROMA_DIR": os.getenv("CHROMA_DIR", "./chroma_db"),
         "ENABLE_AGENT": os.getenv("ENABLE_AGENT", "true"),
         "MAX_AGENT_ITERATIONS": os.getenv("MAX_AGENT_ITERATIONS", "15"),
-        "MAX_HISTORY_TURNS": os.getenv("MAX_HISTORY_TURNS", "20"),
+        "MAX_HISTORY_TURNS": os.getenv("MAX_HISTORY_TURNS", "50"),
     }
 
 
@@ -42,8 +46,8 @@ def _log_effective_config() -> None:
 
 _log_effective_config()
 
-import app_theme  # noqa: E402
 from rag import (  # noqa: E402
+    IndexCancelledError,
     build_agent,
     build_chain,
     build_dependency_graph,
@@ -57,6 +61,7 @@ from rag import (  # noqa: E402
     get_retriever,
     parse_local,
     render_graph_html,
+    search_documents,
     validate_github_url,
 )
 
@@ -69,6 +74,8 @@ class AppState:
     repo_overview: str | None = None
     file_tree: str | None = None
     embeddings: object | None = None
+    retriever: object | None = None
+    files: list | None = None
     documents: list | None = None
     llm: object | None = None
 
@@ -76,7 +83,7 @@ class AppState:
 state = AppState()
 
 
-def _format_chat_history(history: list[dict], max_turns: int = 5, summary: str = "") -> str:
+def _format_chat_history(history: list[dict], max_turns: int = 50, summary: str = "") -> str:
     max_turns = int(os.getenv("MAX_HISTORY_TURNS", str(max_turns)))
     lines: list[str] = []
     if summary:
@@ -107,7 +114,7 @@ def _summarize_conversation(llm: object, existing: str, text: str) -> str:
 
 
 def _update_conversation_summary(history: list[dict], summary: str = "") -> str:
-    max_turns = int(os.getenv("MAX_HISTORY_TURNS", "20"))
+    max_turns = int(os.getenv("MAX_HISTORY_TURNS", "50"))
     if len(history) <= max_turns * 2 or state.llm is None:
         return summary
     old = history[: -(max_turns * 2)]
@@ -115,10 +122,103 @@ def _update_conversation_summary(history: list[dict], summary: str = "") -> str:
     return _summarize_conversation(state.llm, summary, text)
 
 
+def _reset_state() -> None:
+    state.chain = None
+    state.agent_executor = None
+    state.indexed_repo = None
+    state.repo_overview = None
+    state.file_tree = None
+    state.embeddings = None
+    state.retriever = None
+    state.files = None
+    state.documents = None
+    state.llm = None
+
+
+def _meta_path() -> Path:
+    return Path(os.getenv("CHROMA_DIR", "./chroma_db")) / "index_meta.json"
+
+
+def _save_meta(source: str) -> None:
+    if not (Path(os.getenv("CHROMA_DIR", "./chroma_db")) / "chroma.sqlite3").exists():
+        return
+    try:
+        meta = {
+            "source": source,
+            "repo_name": state.indexed_repo,
+            "overview": state.repo_overview,
+            "file_tree": state.file_tree,
+            "files": state.files or [],
+        }
+        _meta_path().parent.mkdir(parents=True, exist_ok=True)
+        _meta_path().write_text(json.dumps(meta))
+    except Exception as e:
+        logger.warning("Index meta save failed: %s", e)
+
+
+def restore_index() -> bool:
+    """Rebuild an in-memory index from a previous run (durable across restarts).
+
+    Search/chat come back via the persisted Chroma collection; for local
+    sources the raw documents are re-parsed from disk so the graph, file
+    overlay and Deep Analysis work too. Called once at server startup.
+    """
+    if state.indexed_repo:
+        return False
+    if not _meta_path().exists():
+        return False
+    try:
+        meta = json.loads(_meta_path().read_text(encoding="utf-8"))
+        source = meta.get("source", "")
+    except Exception as e:
+        logger.warning("Index restore: unreadable meta (%s)", e)
+        return False
+    try:
+        state.indexed_repo = meta.get("repo_name")
+        state.files = meta.get("files") or []
+        state.repo_overview = meta.get("overview")
+        state.file_tree = meta.get("file_tree")
+        local = Path(source).expanduser()
+        if local.is_dir():
+            docs, _stats = parse_local(str(local))
+            state.documents = docs
+        state.embeddings = get_embeddings()
+        state.retriever = get_retriever(
+            k=int(os.getenv("RETRIEVAL_K", "4")),
+            embedding_model=state.embeddings,
+        )
+        state.llm = get_llm()
+        state.chain = build_chain(
+            state.retriever,
+            llm=state.llm,
+            repo_overview=state.repo_overview,
+            file_tree=state.file_tree,
+        )
+        if os.getenv("ENABLE_AGENT", "true").lower() == "true" and state.documents:
+            with contextlib.suppress(Exception):
+                agent = build_agent(state.llm, state.documents)
+                state.agent_executor = AgentExecutor(
+                    agent=agent,
+                    tools=agent.tools,
+                    verbose=False,
+                    max_iterations=int(os.getenv("MAX_AGENT_ITERATIONS", "15")),
+                    handle_parsing_errors=True,
+                    handle_tool_errors=True,
+                )
+        logger.info("Restored index for %s (%d files)", state.indexed_repo, len(state.files or []))
+        return True
+    except Exception as e:
+        logger.warning("Index restore failed: %s", e)
+        _reset_state()
+        return False
+
+
 def index_repo(source: str) -> tuple[str, str]:
     if not source.strip():
         return "Please enter a GitHub URL or local path.", ""
 
+    index_progress["phase"] = "Reading repository"
+    index_progress["cancel"] = False
     try:
         if Path(source).expanduser().is_dir():
             docs, stats = parse_local(source)
@@ -128,14 +228,31 @@ def index_repo(source: str) -> tuple[str, str]:
     except ValueError as e:
         return str(e), ""
 
+    if index_progress.get("cancel"):
+        return "Index cancelled.", ""
+
     try:
         state.documents = docs
 
         state.embeddings = get_embeddings()
-        chunk_count = build_store(state.documents, state.embeddings)
+
+        def _embedding_progress(done: int, total: int) -> None:
+            index_progress["phase"] = f"Embedding {done}/{total} files"
+
+        try:
+            chunk_count = build_store(
+                state.documents,
+                state.embeddings,
+                should_cancel=lambda: bool(index_progress.get("cancel")),
+                progress_cb=_embedding_progress,
+            )
+        except IndexCancelledError:
+            _reset_state()
+            return "Index cancelled.", ""
 
         state.llm = get_llm()
 
+        index_progress["phase"] = "Summarizing repository"
         summary_section = ""
         try:
             summary = generate_summary(state.documents, state.llm)
@@ -152,6 +269,9 @@ def index_repo(source: str) -> tuple[str, str]:
             k=int(os.getenv("RETRIEVAL_K", "4")),
             embedding_model=state.embeddings,
         )
+        state.retriever = retriever
+        state.files = sorted(doc.metadata["source"] for doc in state.documents)
+        index_progress["phase"] = "Building retriever & chain"
         state.file_tree = "\n".join(sorted(doc.metadata["source"] for doc in state.documents))
         state.chain = build_chain(
             retriever,
@@ -177,17 +297,18 @@ def index_repo(source: str) -> tuple[str, str]:
 
         repo_name = docs[0].metadata["repo"]
         state.indexed_repo = repo_name
+        _save_meta(source)
 
         lang_str = ", ".join(
             f"{ext}: {count}" for ext, count in sorted(stats["files_by_ext"].items(), key=lambda x: -x[1])
         )
 
         health: list[str] = []
-        health.append(f"{'✅' if stats['has_readme'] else '⚠️'} README: {'Found' if stats['has_readme'] else 'Missing'}")
-        health.append(f"{'✅' if stats['has_tests'] else '⚠️'} Tests: {'Found' if stats['has_tests'] else 'Missing'}")
-        health.append(f"{'✅' if stats['has_ci'] else '⚠️'} CI/CD: {'Found' if stats['has_ci'] else 'Missing'}")
+        health.append(f"README: {'found' if stats['has_readme'] else 'missing'}")
+        health.append(f"Tests: {'found' if stats['has_tests'] else 'missing'}")
+        health.append(f"CI/CD: {'found' if stats['has_ci'] else 'missing'}")
         if stats["todo_count"] > 0:
-            health.append(f"📝 TODOs: {stats['todo_count']} found")
+            health.append(f"TODOs: {stats['todo_count']} found")
 
         status_text = (
             f"Indexed successfully!\n\n"
@@ -199,6 +320,7 @@ def index_repo(source: str) -> tuple[str, str]:
         )
 
         graph_html = _build_graph()
+        index_progress["phase"] = "Ready"
 
         return status_text, graph_html
 
@@ -259,14 +381,101 @@ def ask_question(message: str, history: list[dict], mode: str = "Quick", summary
         yield list(history), new_summary
 
 
+def collect_sources(question: str, k: int = 10) -> list[dict]:
+    """Return the best retrieved chunk per file for a question, for UI citations."""
+    if not (question or "").strip() or state.embeddings is None:
+        return []
+    return search_documents(question, k=k, embedding_model=state.embeddings)
+
+
+def read_file(path: str, max_lines: int = 4000) -> dict:
+    if not state.documents:
+        return {"error": "No repository indexed."}
+    norm = (path or "").replace("\\", "/")
+    for doc in state.documents:
+        if doc.metadata.get("source", "").replace("\\", "/") == norm:
+            lines = doc.page_content.splitlines() or [""]
+            total = len(lines)
+            truncated = total > max_lines
+            return {
+                "source": doc.metadata.get("source", norm),
+                "total_lines": total,
+                "truncated": truncated,
+                "lines": lines[:max_lines],
+            }
+    return {"error": f"File not found: {path}"}
+
+
+def classify_agent_chunk(chunk: dict) -> tuple[str, str] | None:
+    """Map one AgentExecutor.stream chunk to a UI event.
+
+    Returns ("step", tool_name) for tool executions and ("answer", text) for
+    the final output; None for chunks worth ignoring.
+    """
+    if not isinstance(chunk, dict):
+        return None
+    output = chunk.get("output")
+    if output:
+        return ("answer", output)
+    for action in chunk.get("actions") or []:
+        name = getattr(action, "tool", None) or getattr(action, "name", None)
+        if name:
+            return ("step", name)
+    for msg in chunk.get("messages") or []:
+        content = getattr(msg, "content", "") or ""
+        m = re.search(r"Invoking:\s*`([^`]+)`", content)
+        if m:
+            return ("step", m.group(1))
+        if not getattr(msg, "tool_calls", None) and getattr(msg, "type", "") == "ai":
+            return None
+    return None
+
+
+def stream_deep_analysis(message: str, history: list[dict], summary: str = ""):
+    """Stream Deep Analysis. Yields ("step"|"answer"|"done", payload).
+
+    Falls back to a single non-streaming invoke if .stream is not reliable.
+    """
+    history.append({"role": "user", "content": message})
+    if state.agent_executor is None:
+        history.append({"role": "assistant", "content": "Deep Analysis is not available for this repository."})
+        yield ("answer", "Deep Analysis is not available for this repository.")
+        yield ("done", (history, summary))
+        return
+    history_text = _format_chat_history(history[:-1], summary=summary)
+    answer: str | None = None
+    try:
+        streamed = False
+        for chunk in state.agent_executor.stream({"input": message, "history": history_text}):
+            streamed = True
+            event = classify_agent_chunk(chunk)
+            if event is None:
+                continue
+            kind, value = event
+            if kind == "step":
+                yield ("step", value)
+            elif kind == "answer":
+                answer = value
+        if answer is None:
+            if streamed:
+                logger.debug("Agent stream produced no output; falling back to invoke")
+            result = state.agent_executor.invoke({"input": message, "history": history_text})
+            answer = result.get("output", "No response from agent.")
+        if not answer:
+            answer = "No response from agent."
+    except Exception as e:
+        logger.error("Agent error: %s", e)
+        answer = f"Error: {str(e)}"
+    history.append({"role": "assistant", "content": answer})
+    new_summary = _update_conversation_summary(history, summary)
+    yield ("answer", answer)
+    yield ("done", (history, new_summary))
+
+
 def clear_index() -> tuple[str, str, str]:
-    state.chain = None
-    state.agent_executor = None
-    state.indexed_repo = None
-    state.documents = None
-    state.llm = None
-    state.repo_overview = None
-    state.file_tree = None
+    index_progress["phase"] = ""
+    index_progress["cancel"] = False
+    _reset_state()
     clear_store()
     return (
         "Index cleared. Enter a new GitHub URL to index.",
@@ -280,143 +489,3 @@ def do_export(format_type: str, history: list[dict]):
         return None
     repo_name = state.indexed_repo or "unknown"
     return export_session(history, format_type, repo_name)
-
-
-with gr.Blocks(
-    title="CodeBase QA",
-    theme=app_theme.theme,
-    css=Path(__file__).resolve().with_name("app.css").read_text(encoding="utf-8"),
-) as demo:
-    gr.HTML(
-        """<div style="display:flex;align-items:center;gap:14px">
-  <div class="mark">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
-  </div>
-  <div>
-    <div class="title">CodeBase QA</div>
-    <div class="subtitle">RAG over any GitHub repository &middot; Quick / Deep modes</div>
-  </div>
-</div>""",
-        elem_id="cb-header",
-    )
-
-    chat_history = gr.State([])
-    chat_summary = gr.State("")
-
-    with gr.Row(elem_id="app-body"):
-        with gr.Column(scale=1, elem_id="sidebar"):
-            with gr.Accordion("Repository", open=True, elem_id="cb-repo-accordion"):
-                github_url = gr.Textbox(
-                    label="Repository URL or Local Path",
-                    placeholder="https://github.com/user/repo or a local path, e.g. C:\\my\\repo",
-                )
-                with gr.Row():
-                    index_btn = gr.Button("Index Repository", variant="primary", elem_id="index-btn")
-                    clear_btn = gr.Button("Clear Index", elem_id="clear-btn")
-                mode_toggle = gr.Radio(
-                    choices=["Quick", "Deep Analysis"],
-                    value="Quick",
-                    label="Analysis Mode",
-                    elem_id="mode-toggle",
-                )
-                status_output = gr.Textbox(
-                    label="Status",
-                    lines=10,
-                    interactive=False,
-                    elem_id="status-output",
-                )
-
-            with gr.Accordion("Export", open=False, elem_id="cb-export-accordion"):
-                with gr.Row():
-                    export_format = gr.Dropdown(
-                        choices=["Markdown", "Notebook"],
-                        value="Markdown",
-                        label="Format",
-                    )
-                    export_btn = gr.Button("Export Chat")
-                export_file = gr.File(label="Download", visible=True)
-
-        with gr.Column(scale=2, elem_id="main"), gr.Tabs(elem_id="cb-tabs"):
-            with gr.Tab("Chat"):
-                chatbot = gr.Chatbot(
-                    label="Conversation",
-                    height=500,
-                    type="messages",
-                    show_copy_button=True,
-                    elem_id="cb-chatbot",
-                )
-                with gr.Row(elem_id="composer"):
-                    msg_input = gr.Textbox(
-                        label="Ask a question",
-                        placeholder="What does this project do?",
-                        scale=4,
-                    )
-                    send_btn = gr.Button("Send", variant="primary", scale=1, elem_id="send-btn")
-                with gr.Row():
-                    clear_chat_btn = gr.Button("Clear Chat", elem_id="clear-chat-btn")
-                    gr.Examples(
-                        examples=[
-                            "What does this project do?",
-                            "What are the main files?",
-                            "Explain the architecture",
-                        ],
-                        inputs=msg_input,
-                        label="Examples",
-                        elem_id="cb-examples",
-                    )
-
-            with gr.Tab("Dependency Graph"):
-                graph_output = gr.HTML(
-                    value="<p>Index a repository to view its dependency graph.</p>",
-                    label="Dependency Graph",
-                    elem_id="cb-graph",
-                )
-
-    def user_send(message: str, history: list[dict], mode: str, summary: str):
-        if not message.strip():
-            yield list(history), "", list(history), summary
-            return
-        for updated, new_summary in ask_question(message, history, mode, summary):
-            yield list(updated), "", list(updated), new_summary
-
-    msg_input.submit(
-        fn=user_send,
-        inputs=[msg_input, chat_history, mode_toggle, chat_summary],
-        outputs=[chatbot, msg_input, chat_history, chat_summary],
-    )
-
-    send_btn.click(
-        fn=user_send,
-        inputs=[msg_input, chat_history, mode_toggle, chat_summary],
-        outputs=[chatbot, msg_input, chat_history, chat_summary],
-    )
-
-    clear_chat_btn.click(
-        fn=lambda: ([], [], ""),
-        outputs=[chatbot, chat_history, chat_summary],
-    )
-
-    index_btn.click(
-        fn=index_repo,
-        inputs=[github_url],
-        outputs=[status_output, graph_output],
-    )
-
-    clear_btn.click(
-        fn=clear_index,
-        outputs=[status_output, github_url, graph_output],
-    )
-
-    export_btn.click(
-        fn=do_export,
-        inputs=[export_format, chat_history],
-        outputs=[export_file],
-    )
-
-    gr.HTML(
-        """<div class="line">Built by <a href="https://github.com/zakisserious" target="_blank" rel="noopener">zakisserious</a> &middot; LangChain + ChromaDB + Gradio</div>""",
-        elem_id="cb-footer",
-    )
-
-if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860)

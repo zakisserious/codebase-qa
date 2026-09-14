@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 import app
@@ -44,6 +46,11 @@ def reset_state():
     app.state.chain = None
     app.state.agent_executor = None
     app.state.llm = None
+    app.state.documents = None
+    app.state.embeddings = None
+    app.state.retriever = None
+    app.state.files = None
+    app.index_progress["cancel"] = False
     yield
 
 
@@ -89,8 +96,8 @@ class TestFormatChatHistory:
         assert app._format_chat_history([], max_turns=5, summary="s") == ("[Earlier conversation summary]: s")
 
     def test_default_window_keeps_recent_turn(self, clear_history_env):
-        formatted = app._format_chat_history(make_history(9))
-        assert "q8" in formatted
+        formatted = app._format_chat_history(make_history(60))
+        assert "q59" in formatted
         assert "q0" not in formatted
 
 
@@ -154,7 +161,7 @@ class TestEffectiveConfig:
             "CHROMA_DIR": "./chroma_db",
             "ENABLE_AGENT": "true",
             "MAX_AGENT_ITERATIONS": "15",
-            "MAX_HISTORY_TURNS": "20",
+            "MAX_HISTORY_TURNS": "50",
         }
 
     def test_env_overrides(self, monkeypatch):
@@ -166,14 +173,14 @@ class TestEffectiveConfig:
         assert cfg["CHUNK_SIZE"] == "500"
         assert cfg["ENABLE_AGENT"] == "false"
         assert cfg["MAX_AGENT_ITERATIONS"] == "15"
-        assert cfg["MAX_HISTORY_TURNS"] == "20"
+        assert cfg["MAX_HISTORY_TURNS"] == "50"
 
 
 class TestRollingSummary:
     def test_summary_created_when_over_window(self, clear_history_env):
         llm = FakeLLM()
         app.state.llm = llm
-        history = make_history(21)
+        history = make_history(101)
         summary = app._update_conversation_summary(history, "")
         assert summary == "user is Finn"
         assert llm.prompt is not None
@@ -183,7 +190,7 @@ class TestRollingSummary:
     def test_summary_carries_existing(self, clear_history_env):
         llm = FakeLLM(content="finn likes FastAPI")
         app.state.llm = llm
-        history = make_history(21)
+        history = make_history(101)
         summary = app._update_conversation_summary(history, "old facts")
         assert summary == "finn likes FastAPI"
         assert "old facts" in llm.prompt
@@ -197,14 +204,14 @@ class TestRollingSummary:
         assert llm.calls == 0
 
     def test_summary_skipped_without_llm(self, clear_history_env):
-        history = make_history(21)
+        history = make_history(101)
         summary = app._update_conversation_summary(history, "existing")
         assert summary == "existing"
 
     def test_ask_question_folds_old_turns_into_summary(self, clear_history_env):
         app.state.chain = FakeChain()
         app.state.llm = FakeLLM(content="user is Finn")
-        history = make_history(21)
+        history = make_history(101)
         _, summary = list(app.ask_question("q", history, "Quick"))[-1]
         assert summary == "user is Finn"
 
@@ -230,7 +237,7 @@ class TestIndexRepo:
     def _stub_pipeline(self, monkeypatch):
         monkeypatch.setenv("ENABLE_AGENT", "false")
         monkeypatch.setattr(app, "get_embeddings", lambda: object())
-        monkeypatch.setattr(app, "build_store", lambda docs, embeddings: 5)
+        monkeypatch.setattr(app, "build_store", lambda docs, embeddings, **kw: 5)
         monkeypatch.setattr(app, "get_llm", lambda: object())
         monkeypatch.setattr(
             app,
@@ -269,3 +276,269 @@ class TestIndexRepo:
     def test_empty_input(self):
         status, _ = app.index_repo("   ")
         assert status == "Please enter a GitHub URL or local path."
+
+
+class TestIndexCancel:
+    def _stub_doc(self, source, repo):
+        return type(
+            "D", (), {"page_content": "x = 1\n", "metadata": {"source": source, "repo": repo, "repo_url": "u"}}
+        )()
+
+    def _stub_stats(self):
+        return {
+            "total_files": 1,
+            "total_lines": 1,
+            "files_by_ext": {".py": 1},
+            "has_readme": True,
+            "has_tests": False,
+            "has_ci": False,
+            "todo_count": 0,
+        }
+
+    def test_cancel_flag_stops_before_embedding(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("ENABLE_AGENT", "false")
+        parsed: list = []
+
+        def parse_local(p):
+            parsed.append(p)
+            app.index_progress["cancel"] = True
+            return [self._stub_doc("app.py", tmp_path.name)], self._stub_stats()
+
+        monkeypatch.setattr(app, "parse_local", parse_local)
+        status, _ = app.index_repo(str(tmp_path))
+
+        assert status == "Index cancelled."
+        assert parsed == [str(tmp_path)]
+        assert app.state.files is None
+
+    def test_cancel_in_store_returns_cancelled(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("ENABLE_AGENT", "false")
+        monkeypatch.setattr(
+            app, "parse_local", lambda p: ([self._stub_doc("app.py", tmp_path.name)], self._stub_stats())
+        )
+        monkeypatch.setattr(app, "get_embeddings", lambda: object())
+
+        from rag.vectorstore import IndexCancelledError
+
+        monkeypatch.setattr(app, "build_store", lambda *a, **kw: (_ for _ in ()).throw(IndexCancelledError("x")))
+        status, _ = app.index_repo(str(tmp_path))
+
+        assert status == "Index cancelled."
+        assert app.state.files is None
+
+
+class TestRestoreIndex:
+    def test_skip_when_no_meta(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("CHROMA_DIR", str(tmp_path))
+        app._reset_state()
+        assert app.restore_index() is False
+        assert app.state.indexed_repo is None
+
+    def test_skip_when_already_indexed(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("CHROMA_DIR", str(tmp_path))
+        (tmp_path / "index_meta.json").write_text("{}")
+        app._reset_state()
+        app.state.indexed_repo = "already-set"
+        assert app.restore_index() is False
+
+    def test_restores_state_from_meta(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("CHROMA_DIR", str(tmp_path))
+        monkeypatch.setenv("ENABLE_AGENT", "false")
+        monkeypatch.setenv("RETRIEVAL_K", "2")
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "main.py").write_text("print('hello')\n")
+        meta = {
+            "source": str(src),
+            "repo_name": "demo",
+            "overview": "Test overview",
+            "file_tree": "main.py",
+            "files": ["main.py"],
+        }
+        (tmp_path / "index_meta.json").write_text(json.dumps(meta))
+        stubs = {"embeddings": object(), "llm": object(), "retriever": object()}
+        monkeypatch.setattr(app, "get_embeddings", lambda: stubs["embeddings"])
+        monkeypatch.setattr(app, "get_llm", lambda: stubs["llm"])
+        monkeypatch.setattr(app, "get_retriever", lambda k=4, embedding_model=None: stubs["retriever"])
+        monkeypatch.setattr(app, "build_chain", lambda *a, **k: "fake-chain")
+        app._reset_state()
+        assert app.state.indexed_repo is None
+        result = app.restore_index()
+        assert result is True
+        assert app.state.indexed_repo == "demo"
+        assert app.state.files == ["main.py"]
+        assert app.state.repo_overview == "Test overview"
+        assert app.state.documents is not None and len(app.state.documents) == 1
+        assert app.state.retriever is stubs["retriever"]
+        assert app.state.chain == "fake-chain"
+
+    def test_index_repo_writes_meta(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("CHROMA_DIR", str(tmp_path))
+        monkeypatch.setenv("ENABLE_AGENT", "false")
+        (tmp_path / "chroma.sqlite3").touch()
+        fake_doc = type(
+            "D", (), {"page_content": "x = 1\n", "metadata": {"source": "main.py", "repo": "myrepo", "repo_url": "u"}}
+        )()
+        stats = {
+            "total_files": 1,
+            "total_lines": 1,
+            "files_by_ext": {".py": 1},
+            "has_readme": True,
+            "has_tests": False,
+            "has_ci": False,
+            "todo_count": 0,
+        }
+        monkeypatch.setattr(app, "get_embeddings", lambda: object())
+        monkeypatch.setattr(app, "get_llm", lambda: object())
+        monkeypatch.setattr(app, "build_store", lambda d, e, **kw: 1)
+        monkeypatch.setattr(app, "get_retriever", lambda k=4, embedding_model=None: object())
+        monkeypatch.setattr(app, "build_chain", lambda *a, **k: object())
+        monkeypatch.setattr(app, "_build_graph", lambda: "<html></html>")
+        monkeypatch.setattr(app, "parse_local", lambda p: ([fake_doc], stats))
+        app._reset_state()
+        status, _ = app.index_repo(str(tmp_path))
+        assert status.startswith("Indexed successfully!")
+        assert (tmp_path / "index_meta.json").exists()
+        saved = json.loads((tmp_path / "index_meta.json").read_text())
+        assert saved["repo_name"] == "myrepo"
+        assert "main.py" in saved["files"]
+
+
+class TestCollectSources:
+    def test_no_index_returns_empty(self):
+        app.state.embeddings = None
+        assert app.collect_sources("anything") == []
+
+    def test_empty_message_returns_empty(self, monkeypatch):
+        called: list = []
+        monkeypatch.setattr(app, "search_documents", lambda m, k, embedding_model: called.append((m, k)) or [])
+        assert app.collect_sources("   ") == []
+        assert called == []
+
+
+class TestReadFile:
+    def _docs(self):
+        return [
+            {"source": "auth.py", "page_content": "line a\nline b\nline c\n"},
+            {"source": "dir/app.py", "page_content": "x\ny\n"},
+        ]
+
+    def _fixture(self):
+        app.state.documents = [
+            type("D", (), {"metadata": d, "page_content": d.pop("page_content")})() for d in self._docs()
+        ]
+
+    def test_returns_lines(self):
+        self._fixture()
+        result = app.read_file("auth.py")
+        assert result["total_lines"] == 3
+        assert result["lines"] == ["line a", "line b", "line c"]
+        assert result["truncated"] is False
+
+    def test_max_lines(self):
+        self._fixture()
+        result = app.read_file("dir/app.py", max_lines=1)
+        assert result["truncated"] is True
+        assert result["lines"] == ["x"]
+
+    def test_missing_file(self):
+        app.state.documents = []
+        result = app.read_file("nope.py")
+        assert result["error"]
+
+    def test_no_documents(self):
+        result = app.read_file("x.py")
+        assert result["error"]
+
+
+class _FakeAction:
+    def __init__(self, tool):
+        self.tool = tool
+
+
+class _Msg:
+    def __init__(self, content, type="ai", tool_calls=None):
+        self.content = content
+        self.type = type
+        self.tool_calls = tool_calls or []
+
+
+class TestClassifyAgentChunk:
+    def test_action_step(self):
+        event = app.classify_agent_chunk({"actions": [_FakeAction("search_code")]})
+        assert event == ("step", "search_code")
+
+    def test_output_answer(self):
+        event = app.classify_agent_chunk({"output": "final answer"})
+        assert event == ("answer", "final answer")
+
+    def test_invoking_log_step(self):
+        event = app.classify_agent_chunk({"messages": [_Msg("Invoking: `read_file` with...")]})
+        assert event == ("step", "read_file")
+
+    def test_garbage_is_none(self):
+        assert app.classify_agent_chunk(None) is None
+        assert app.classify_agent_chunk({"type": "not-a-step"}) is None
+
+
+class FakeStreamAgent:
+    def __init__(self, chunks, invoke_output="fallback answer"):
+        self.chunks = chunks
+        self.invoke_output = invoke_output
+        self.stream_calls = 0
+        self.invoke_calls = 0
+
+    def stream(self, inputs):
+        self.stream_calls += 1
+        yield from self.chunks
+
+    def invoke(self, inputs):
+        self.invoke_calls += 1
+        return {"output": self.invoke_output}
+
+
+class TestStreamDeepAnalysis:
+    def test_streams_steps_and_answer(self):
+        executor = FakeStreamAgent([{"actions": [_FakeAction("search_code")]}, {"output": "deep answer"}])
+        app.state.agent_executor = executor
+        history = []
+
+        events = [k if isinstance(p, str) else "LIST" for k, p in app.stream_deep_analysis("q", history)]
+        assert events == ["step", "answer", "LIST"]
+        assert history[-2:] == [
+            {"role": "user", "content": "q"},
+            {"role": "assistant", "content": "deep answer"},
+        ]
+
+    def test_falls_back_to_invoke_when_stream_empty(self):
+        executor = FakeStreamAgent([])
+        app.state.agent_executor = executor
+        history = [{"role": "user", "content": "old"}]
+
+        kinds = []
+        for kind, payload in app.stream_deep_analysis("q", history):
+            kinds.append(kind)
+            if kind == "done":
+                done_history, _ = payload
+
+        assert kinds == ["answer", "done"]
+        assert executor.stream_calls == 1
+        assert executor.invoke_calls == 1
+        assert done_history[-1] == {"role": "assistant", "content": "fallback answer"}
+
+    def test_answers_without_executor(self):
+        app.state.agent_executor = None
+        history = []
+        events = []
+        for kind, payload in app.stream_deep_analysis("q", history):
+            if isinstance(payload, str):
+                events.append((kind, payload))
+        assert events == [
+            ("answer", "Deep Analysis is not available for this repository."),
+        ]
+
+    def test_no_tool_calls_yields_no_step(self):
+        executor = FakeStreamAgent([{"messages": [_Msg("thinking text")]}], invoke_output="ok")
+        app.state.agent_executor = executor
+        kinds = [k for k, _ in app.stream_deep_analysis("q", [])]
+        assert kinds == ["answer", "done"]

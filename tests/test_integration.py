@@ -12,7 +12,7 @@ from rag.chain import _format_docs, build_chain
 from rag.code_splitter import split_documents
 from rag.graph import build_dependency_graph, render_graph_html
 from rag.summary import generate_summary
-from rag.vectorstore import build_store, clear_store, get_retriever
+from rag.vectorstore import build_store, get_retriever
 
 
 class FakeChatModel(BaseChatModel):
@@ -75,21 +75,15 @@ A tool for asking questions about code.
     ]
 
 
-@pytest.fixture(autouse=True)
-def cleanup_chroma():
-    yield
-    clear_store()
-
-
 class TestFullPipeline:
-    def test_split_to_store_to_retriever(self, real_documents):
+    def test_split_to_store_to_retriever(self, real_documents, fake_embeddings, monkeypatch, tmp_path):
+        monkeypatch.setattr("rag.vectorstore.CHROMA_DIR", str(tmp_path))
         chunks = split_documents(real_documents, chunk_size=500)
         assert len(chunks) > 0
         assert all(c.metadata.get("start_line") for c in chunks)
 
-        with patch("rag.vectorstore.Chroma.from_documents"):
-            count = build_store(chunks, MagicMock(), chunk_size=500)
-            assert count == len(chunks)
+        count = build_store(real_documents, fake_embeddings, chunk_size=500)
+        assert count == len(chunks)
 
     def test_retriever_returns_relevant_chunks(self, real_documents):
         split_documents(real_documents, chunk_size=500)
