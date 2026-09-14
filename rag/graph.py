@@ -1,5 +1,4 @@
 import ast
-import html
 import json
 import logging
 import posixpath
@@ -80,7 +79,41 @@ def _extract_imports(content: str, ext: str) -> list[str]:
         return _extract_python_imports(content)
     elif ext in {".js", ".ts", ".tsx", ".jsx"}:
         return _extract_js_imports(content)
+    elif ext == ".rs":
+        return _extract_rust_imports(content)
     return []
+
+
+def _extract_rust_imports(content: str) -> list[str]:
+    """Extract Rust module declarations and use statements.
+
+    Handles:
+    - mod foo; / pub mod foo;  -> declares child module 'foo'
+    - mod foo::bar;            -> nested module
+    - use foo::bar;            -> imports path
+    - use crate::foo::bar;     -> crate-relative path
+    - use self::foo;            -> self-relative
+    - use super::foo;          -> parent-relative
+    """
+    imports = []
+    # mod foo; / pub mod foo; / mod foo::bar;
+    for m in re.finditer(r"\bmod\s+([a-zA-Z_][a-zA-Z0-9_:://]*)", content):
+        path = m.group(1).rstrip(";")
+        segs = [s for s in path.split("::") if s]
+        if len(segs) > 1:
+            imports.append("::".join(segs[:2]))
+        else:
+            imports.append(segs[0])
+    # use foo::bar; / use crate::foo::bar; etc.
+    for m in re.finditer(r"\buse\s+([a-zA-Z_][a-zA-Z0-9_:://]*)", content):
+        path = m.group(1).rstrip(";")
+        # Keep first two segments for relative resolution
+        segs = path.split("::")
+        if len(segs) > 1:
+            imports.append("::".join(segs[:2]))
+        else:
+            imports.append(path)
+    return imports
 
 
 def _extract_python_imports(content: str) -> list[str]:
@@ -118,7 +151,15 @@ def _extract_js_imports(content: str) -> list[str]:
 
 def _resolve_import(module: str, file_path: str, doc_by_source: dict) -> str | None:
     norm = {source.replace("\\", "/"): source for source in doc_by_source}
-    exts = {".py", ".js", ".ts", ".tsx", ".jsx"}
+    exts = {".py", ".js", ".ts", ".tsx", ".jsx", ".rs"}
+
+    # Rust: mod foo; in src/main.rs resolves to src/foo.rs or src/foo/mod.rs
+    if not module.startswith(".") and "::" not in module:
+        src_path = file_path.replace("\\", "/")
+        parent = str(Path(src_path).parent)
+        for candidate in (parent + "/" + module + ".rs", parent + "/" + module + "/mod.rs"):
+            if candidate in norm:
+                return norm[candidate]
 
     if module.startswith("."):
         level = len(module) - len(module.lstrip("."))
@@ -136,6 +177,22 @@ def _resolve_import(module: str, file_path: str, doc_by_source: dict) -> str | N
             if candidate in norm:
                 return norm[candidate]
         return None
+
+    # Rust: use crate::audio or use crate::audio::fifo -> src/audio.rs or src/audio/mod.rs
+    if "::" in module:
+        segments = module.split("::")
+        # Strip leading crate/root markers, keep actual module path
+        segments = [s for s in segments if s and s not in ("crate", "self", "super")]
+        src_path = file_path.replace("\\", "/")
+        # Try resolving from src/ directory
+        for candidate in ("src/" + "/".join(segments) + ".rs", "src/" + "/".join(segments) + "/mod.rs"):
+            if candidate in norm:
+                return norm[candidate]
+        # Try resolving relative to the file's parent
+        parent = str(Path(src_path).parent)
+        for candidate in (parent + "/" + "/".join(segments) + ".rs", parent + "/" + "/".join(segments) + "/mod.rs"):
+            if candidate in norm:
+                return norm[candidate]
 
     parts = module.split(".")
     for source, norm_source in norm.items():
@@ -160,6 +217,8 @@ def _file_type(source: str) -> str:
 
     if ext == ".py":
         return "test" if "test" in name else "python"
+    if ext == ".rs":
+        return "test" if "test" in name else "rust"
     if ext in {".js", ".ts", ".tsx", ".jsx"}:
         return "javascript"
     if ext in {".md", ".txt", ".rst"}:
@@ -173,8 +232,7 @@ def render_graph_html(graph_data: dict) -> str:
     template = _TEMPLATE_PATH.read_text(encoding="utf-8")
     data_json = json.dumps(graph_data).replace("</", "<\\/")
     inner = template.replace("__GRAPH_DATA__", data_json)
-    escaped = html.escape(inner, quote=True)
     return (
-        '<iframe srcdoc="' + escaped + '" '
-        'style="width:100%;height:650px;border:0;border-radius:8px;background:#1a1a2e;"></iframe>'
+        '<iframe srcdoc="' + inner.replace('"', "&quot;") + '" '
+        'style="width:100%;height:700px;border:0;border-radius:12px;"></iframe>'
     )

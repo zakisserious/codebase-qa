@@ -2,75 +2,529 @@
 <html>
 <head>
 <meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Geist&family=JetBrains+Mono&display=swap" rel="stylesheet">
 <style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a2e; color: #eee; overflow: hidden; }
-#graph { width: 100%; height: 100vh; }
-#stats { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.7); padding: 12px 16px; border-radius: 8px; font-size: 12px; line-height: 1.6; }
-#stats h3 { margin-bottom: 6px; font-size: 14px; }
-.tooltip { position: absolute; background: rgba(0,0,0,0.85); color: #fff; padding: 8px 12px; border-radius: 6px; font-size: 12px; pointer-events: none; display: none; max-width: 300px; }
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:"Geist",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#0a0a0f;color:#c9cdd2;overflow:hidden}
+#graph{width:100%;height:100vh;cursor:grab;user-select:none}
+#graph.dragging{cursor:grabbing}
+
+#stats{position:absolute;top:16px;left:16px;background:rgba(16,16,22,.9);border:1px solid rgba(255,255,255,.08);padding:14px 18px;border-radius:8px;font-size:12px;line-height:1.8;color:#8a8f98;max-width:330px;z-index:10;pointer-events:none}
+#stats h3{margin-bottom:10px;font-family:"Instrument Serif",Georgia,serif;font-size:19px;font-weight:400;letter-spacing:-0.02em;color:#FF984D}
+#stats .stat{font-family:"JetBrains Mono",ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:.02em}
+#stats .stat b{color:#eceff1;font-weight:500}
+#stats .cycles{font-family:"JetBrains Mono",ui-monospace,Menlo,monospace;font-size:11px;display:none}
+#stats .cycles b{color:#fca5a5;font-weight:500}
+#stats .focus{color:#8a8f98;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.08);font-family:"JetBrains Mono",ui-monospace,Menlo,monospace;font-size:11px;line-height:1.7;display:none}
+#stats .focus b{color:#FF984D;font-weight:500}
+#stats .focus .dim{color:#5b6068}
+#stats .focus .dim b{color:#8a8f98}
+
+#controls{position:absolute;top:16px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;padding:6px 8px 6px 12px;background:rgba(16,16,22,.88);border:1px solid rgba(255,255,255,.08);border-radius:8px;z-index:11}
+#find{background:transparent;border:none;border-bottom:1px solid transparent;outline:none;color:#c9cdd2;font-family:"JetBrains Mono",ui-monospace,Menlo,monospace;font-size:11px;width:190px;padding:2px 0}
+#find::placeholder{color:#5b6068}
+#find:focus{border-bottom:1px solid rgba(255,152,77,.55)}
+.cbtn{flex:none;background:rgba(16,16,22,.88);border:1px solid rgba(255,255,255,.08);border-radius:4px;color:#8a8f98;font-family:"JetBrains Mono",ui-monospace,Menlo,monospace;font-size:10px;padding:4px 8px;cursor:pointer;transition:background .15s ease-out,color .15s ease-out,border-color .15s ease-out;white-space:nowrap}
+.cbtn:hover{color:#eceff1;border-color:rgba(255,255,255,.2)}
+.cbtn.active{color:#0a0a0f;background:#eceff1;border-color:#eceff1}
+
+#legend{position:absolute;top:16px;right:16px;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px 12px;max-width:400px;z-index:10;pointer-events:none;background:rgba(16,16,22,.88);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:9px 14px;font-family:"JetBrains Mono",ui-monospace,Menlo,monospace;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#5b6068}
+#legend .sw{display:inline-flex;align-items:center;gap:5px}
+#legend i{width:8px;height:8px;border-radius:50%;display:inline-block}
+#legend .hint{flex-basis:100%;text-align:right;text-transform:none;font-size:9.5px;letter-spacing:.03em;color:#3f444c}
+#legend .hint i{display:inline-block;border-radius:50%;vertical-align:middle;margin-right:3px}
+#legend .rank{flex-basis:100%;text-align:right;text-transform:none;font-size:9.5px;letter-spacing:.03em;color:#3f444c}
+#legend .rank b{color:#8a8f98;font-weight:500}
+
+#nodeactions{position:absolute;top:16px;right:16px;display:none;align-items:center;gap:6px;padding:6px 10px;background:rgba(16,16,22,.94);border:1px solid rgba(255,255,255,.12);border-radius:8px;z-index:13;max-width:420px}
+#nodeactions .napath{font-family:"JetBrains Mono",ui-monospace,Menlo,monospace;font-size:10px;color:#FF984D;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:240px}
+#nodeactions button{flex:none;border:1px solid rgba(255,255,255,.14);border-radius:4px;background:#eceff1;color:#0a0a0f;font-family:"JetBrains Mono",ui-monospace,Menlo,monospace;font-size:10px;padding:3px 8px;cursor:pointer;transition:opacity .15s ease-out}
+#nodeactions button:hover{opacity:.85}
+
+#none{position:absolute;inset:0;display:none;align-items:center;justify-content:center;z-index:9;font-family:"JetBrains Mono",ui-monospace,Menlo,monospace;font-size:13px;color:#5b6068;text-align:center;padding:24px;pointer-events:none}
+.tooltip{position:absolute;background:rgba(16,16,22,.96);border:1px solid rgba(255,255,255,.12);color:#c9cdd2;padding:10px 14px;border-radius:8px;font-size:12px;pointer-events:none;display:none;max-width:380px;line-height:1.7;z-index:100}
+.tooltip b{color:#FF984D;font-weight:600}
+.tooltip .dim{color:#5b6068;font-size:11px;font-family:"JetBrains Mono",ui-monospace,Menlo,monospace}
+.tooltip .dim b{color:#8a8f98;font-weight:500}
+#labels text{transition:opacity .14s ease-out}
+#labels text.node-label{stroke:#0a0a0f;stroke-width:3px;paint-order:stroke}
+.labels-off #labels text{opacity:0}
 </style>
 </head>
 <body>
-<div id="stats"></div>
+<div id="stats"><h3>Dependency Graph</h3><div class="stat">Files: <b></b> &middot; Deps: <b></b></div><div class="stat top"></div><div class="stat orphan"></div><div class="stat cycles"></div><div class="focus"></div></div>
+<div id="controls"><input id="find" placeholder="find file..." spellcheck="false"><button id="layoutMode" class="cbtn">Force</button><button id="hideTests" class="cbtn" title="Hide test files">Hide tests</button><select id="dirFilter" class="cbtn"><option value="__all__">All directories</option></select></div>
+<div id="legend"></div>
+<div id="nodeactions"><span class="napath" id="napath"></span><button id="naRead" type="button">Read file</button><button id="naAsk" type="button">Ask about it</button></div>
+<div id="none">No imports detected between indexed files.<br>Nodes shown, just no edges.</div>
 <div id="graph"></div>
 <div class="tooltip" id="tooltip"></div>
 <script src="https://d3js.org/d3.v7.min.js"></script>
 <script>
-const data = __GRAPH_DATA__;
-const colors = { python: "#3572A5", javascript: "#f1e05a", test: "#e8915a", docs: "#4a9e4a", config: "#8b8b8b", other: "#666" };
-const width = window.innerWidth;
-const height = window.innerHeight;
+const data=__GRAPH_DATA__;
+const colors={python:"#5b7ea6",javascript:"#c2a95c",rust:"#b0605c",test:"#FF984D",docs:"#6fa573",config:"#6b7280",other:"#4b5563"};
+const accent="#FF984D", edge="#333a49", downstream="#FF984D", upstream="#7ea2cf";
+const w=window.innerWidth,h=window.innerHeight;
+const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-const statsDiv = document.getElementById("stats");
-statsDiv.innerHTML = `<h3>Dependency Graph</h3>Files: ${data.stats.total_nodes} | Dependencies: ${data.stats.total_edges}` +
-  (data.stats.most_imported.length ? "<br>Most imported: " + data.stats.most_imported.map(n => n.name + " (" + n.count + ")").join(", ") : "") +
-  (data.stats.orphan_files.length ? "<br>Orphan files: " + data.stats.orphan_files.length : "");
+const allNodes=data.nodes, allLinks=data.links;
+let nodes=allNodes, links=allLinks;
+let hideTests=false, dirFilter="__all__";
 
-const svg = d3.select("#graph").append("svg").attr("width", width).attr("height", height);
-const g = svg.append("g");
+const pathTop=n=>{const s=(n.id||n).replace("\\","/").split("/");return s.length>1&&s[0]?s[0]:"root"};
+const isTest=n=>/(\/|^|_)(test|tests|__tests__)(\/|_|\.|-|$)/i.test(n.id)||/\.(spec|test)\.(py|js|ts|jsx|tsx)$/i.test(n.id)||/tests?\//.test(n.id.replace("\\","/"));
+const visible=n=>!(hideTests&&isTest(n))&&(dirFilter==="__all__"||pathTop(n)===dirFilter||n.id.replace("\\","/")===dirFilter);
 
-svg.call(d3.zoom().scaleExtent([0.1, 4]).on("zoom", (e) => g.attr("transform", e.transform)));
+/* ---- graph index: out / inc / adj ---- */
+function mkSets(ns,ls){
+  const out=new Map(ns.map(n=>[n.id,new Set()]));   // this file imports
+  const inc=new Map(ns.map(n=>[n.id,new Set()]));   // importers of this file
+  const adj=new Map(ns.map(n=>[n.id,new Set()]));   // both
+  const indeg={},children=new Map();
+  ns.forEach(n=>{indeg[n.id]=0;children.set(n.id,[])});
+  ls.forEach(l=>{const s=srcOf(l),t=tgtOf(l);if(out.has(s)&&out.has(t)){out.get(s).add(t);inc.get(t).add(s);adj.get(s).add(t);adj.get(t).add(s);indeg[t]++;children.get(s).push(t);}});
+  return {out,inc,adj,indeg,children};
+}
+function srcOf(l){return typeof l.source==="object"?l.source.id:l.source}
+function tgtOf(l){return typeof l.target==="object"?l.target.id:l.target}
 
-const defs = svg.append("defs");
-defs.append("marker").attr("id", "arrow").attr("viewBox", "0 -5 10 10").attr("refX", 20).attr("refY", 0)
-  .attr("markerWidth", 6).attr("markerHeight", 6).attr("orient", "auto")
-  .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", "#666");
+/* ---- Tarjan SCC : cycle detection ---- */
+function tarjan(ns,out,inc){
+  let ti=0;const stck=[],iidx=new Map(),low=new Map(),onSt=new Set(),sccs=[];
+  function strong(v){
+    iidx.set(v,ti);low.set(v,ti);ti++;stck.push(v);onSt.add(v);
+    out.get(v).forEach(t=>{
+      if(!iidx.has(t)){strong(t);low.set(v,Math.min(low.get(v),low.get(t)));}
+      else if(onSt.has(t))low.set(v,Math.min(low.get(v),iidx.get(t)));
+    });
+    if(low.get(v)===iidx.get(v)){
+      const comp=[];let u;
+      do{u=stck.pop();onSt.delete(u);comp.push(u);}while(u!==v);
+      const size1=comp.length===1&&inc.get(comp[0]).has(comp[0]);
+      if(comp.length>1||size1)sccs.push(comp);
+    }
+  }
+  if(ns[0])strong(ns[0].id);
+  ns.forEach(n=>{if(!iidx.has(n.id))strong(n.id)});
+  return new Set(sccs.flat());
+}
 
-const simulation = d3.forceSimulation(data.nodes)
-  .force("link", d3.forceLink(data.links).id(d => d.id).distance(100))
-  .force("charge", d3.forceManyBody().strength(-200))
-  .force("center", d3.forceCenter(width / 2, height / 2))
-  .force("collision", d3.forceCollide().radius(30));
+/* ---- import-depth from roots (Kahn longest path) ---- */
+function rings(ns,ls,children,indeg){
+  const dist={};ns.forEach(n=>dist[n.id]=0);
+  const indegC={...indeg}, settled=new Set(),q=[];
+  ns.forEach(n=>{if(indegC[n.id]===0)q.push(n.id)});
+  while(q.length){
+    const v=q.shift();settled.add(v);
+    children.get(v).forEach(t=>{indegC[t]--;dist[t]=Math.max(dist[t],dist[v]+1);if(indegC[t]===0)q.push(t)});
+  }
+  let maxD=0;ns.forEach(n=>{if(dist[n.id]>maxD)maxD=dist[n.id]});
+  return {settled,dist,maxD};
+}
 
-const link = g.append("g").selectAll("line").data(data.links).join("line")
-  .attr("stroke", "#555").attr("stroke-width", 1).attr("marker-end", "url(#arrow)");
+/* ---- directory cluster anchors ---- */
+const clusterKey=n=>{const p=n.id.replace("\\","/").split("/");return p.length>2?p.slice(0,-1).join("/"):p[0]||"root"};
+function anchors(ns){
+  const list=[...new Set(ns.map(clusterKey))];
+  const res=new Map();
+  list.forEach((k,i)=>{
+    const a=(i/list.length)*2*Math.PI;
+    const r=Math.min(360,50+Math.sqrt(list.length)*42);
+    res.set(k,{x:w/2+Math.cos(a)*r,y:h/2+Math.sin(a)*r});
+  });
+  return res;
+}
 
-const node = g.append("g").selectAll("g").data(data.nodes).join("g")
-  .call(d3.drag().on("start", dragStart).on("drag", dragging).on("end", dragEnd));
+/* global stats snapshot (unfiltered) */
+const gsets=mkSets(allNodes,allLinks);
+const grings=rings(allNodes,allLinks,gsets.children,gsets.indeg);
+const allAnchors=anchors(allNodes);
 
-node.append("circle").attr("r", d => Math.max(5, Math.min(15, Math.sqrt(d.lines / 10))))
-  .attr("fill", d => colors[d.type] || colors.other).attr("stroke", "#333").attr("stroke-width", 1.5);
+/* ---- build legend ---- */
+const legend=document.getElementById("legend");
+const types=[...new Set(allNodes.map(n=>n.type))];
+types.sort((a,b)=>(Object.keys(colors).indexOf(a)-Object.keys(colors).indexOf(b)));
+types.forEach(t=>{legend.insertAdjacentHTML("beforeend",'<span class="sw"><i style="background:'+(colors[t]||colors.other)+'"></i>'+t+"</span>")});
+legend.insertAdjacentHTML("beforeend",'<div class="hint">hover &rarr; neighbors &middot; shift &rarr; full trace &middot; scroll &rarr; zoom &middot; dblclick &rarr; reset</div>');
+legend.insertAdjacentHTML("beforeend",'<div class="hint"><i style="width:5px;height:5px;background:#5b6068"></i> ~10 &nbsp; <i style="width:9px;height:9px;background:#5b6068"></i> ~600 &nbsp; <i style="width:13px;height:13px;background:#5b6068"></i> 2k+ lines &nbsp;&middot;&nbsp; amber ring = entry point &nbsp;&middot;&nbsp; dashed = isolated &nbsp;&middot;&nbsp; click a node, then Read / Ask</div>');
+const largest=allNodes.slice().sort((a,b)=>b.lines-a.lines).slice(0,5);
+const topImp=allNodes.slice().sort((a,b)=>(gsets.inc.get(b.id)?.size||0)-(gsets.inc.get(a.id)?.size||0)).slice(0,5);
+legend.insertAdjacentHTML("beforeend",'<div class="rank">largest: <b>'+largest.map(n=>n.name).join(" &middot; ")+"</b></div>");
+legend.insertAdjacentHTML("beforeend",'<div class="rank">most imported: <b>'+topImp.filter(n=>(gsets.inc.get(n.id)?.size||0)>0).map(n=>n.name+" ("+gsets.inc.get(n.id).size+")").join(" &middot; ")+"</b></div>");
 
-node.append("text").text(d => d.name).attr("dx", 12).attr("dy", 4).attr("font-size", 10).attr("fill", "#ccc");
+/* ---- dir filter select ---- */
+const tops=[...new Set(allNodes.map(pathTop))].sort();
+const dirSel=document.getElementById("dirFilter");
+tops.forEach(t=>{const o=document.createElement("option");o.value=t;o.textContent=t==="root"?"Root":t;dirSel.appendChild(o)});
 
-const tooltip = document.getElementById("tooltip");
-node.on("mouseover", (e, d) => {
-  tooltip.style.display = "block";
-  tooltip.innerHTML = `<b>${d.id}</b><br>Lines: ${d.lines} | Type: ${d.type}<br>In-degree: ${d.in_degree}`;
-}).on("mousemove", (e) => {
-  tooltip.style.left = (e.pageX + 10) + "px";
-  tooltip.style.top = (e.pageY - 10) + "px";
-}).on("mouseout", () => { tooltip.style.display = "none"; });
+/* ---- svg & simulation ---- */
+const svg=d3.select("#graph").append("svg").attr("width",w).attr("height",h);
+const g=svg.append("g");
+svg.append("rect").attr("width",w).attr("height",h).attr("fill","#0a0a0f").style("cursor","grab").lower();
+const defs=svg.append("defs");
+defs.append("marker").attr("id","arrow").attr("viewBox","0 -5 10 10").attr("refX",22).attr("refY",0).attr("markerWidth",6).attr("markerHeight",6).attr("orient","auto").attr("fill","#4a5462").append("path").attr("d","M0,-5L10,0L0,5");
 
-simulation.on("tick", () => {
-  link.attr("x1", d => d.source.x).attr("y1", d => d.source.y).attr("x2", d => d.target.x).attr("y2", d => d.target.y);
-  node.attr("transform", d => `translate(${d.x},${d.y})`);
+let sim=d3.forceSimulation(nodes);
+function rebuildSim(){
+  sim.stop();
+  sim=d3.forceSimulation(nodes)
+    .force("link",d3.forceLink(links).id(d=>d.id).distance(120).strength(.3))
+    .force("charge",d3.forceManyBody().strength(-350))
+    .force("center",d3.forceCenter(w/2,h/2))
+    .force("collision",d3.forceCollide().radius(30))
+    .force("clx",d3.forceX(n=>allAnchors.get(clusterKey(n))?.x??w/2).strength(0.10))
+    .force("cly",d3.forceY(n=>allAnchors.get(clusterKey(n))?.y??h/2).strength(0.10))
+    .on("tick",place);
+}
+
+let hovered=null,pinned=null,zoomK=1,hoverShift=false,radialMode=true;
+
+/* ---- drawing ---- */
+function r(n){return Math.max(6,Math.min(14,Math.sqrt(n.lines/12)))}
+const ENTRY_RE=/^(main|__main__|index)(\.(py|rs|js|ts|jsx|tsx))?$/i;
+const drag=d3.drag()
+  .on("start",e=>{e.sourceEvent.stopPropagation();if(!e.active&&!radialMode)sim.alphaTarget(.3).restart();e.subject._sx=e.subject.x;e.subject._sy=e.subject.y})
+  .on("drag",e=>{e.subject.fx=e.x;e.subject.fy=e.y;if(radialMode){e.subject.x=e.x;e.subject.y=e.y;place();}})
+  .on("end",e=>{sim.alphaTarget(0);if(!radialMode){e.subject.fx=null;e.subject.fy=null;}});
+
+const linkSel=g.append("g").attr("id","links");
+const nodeSel=g.append("g").attr("id","labels");
+
+function draw(){
+  linkSel.selectAll("line")
+    .data(links, l=>srcOf(l)+"\u0000"+tgtOf(l))
+    .join("line")
+    .attr("stroke",edge).attr("stroke-width",1.2).attr("marker-end","url(#arrow)").attr("opacity",0.55);
+
+  const grp=nodeSel.selectAll("g")
+    .data(nodes,d=>d.id)
+    .join(
+      enter=>{const e=enter.append("g").call(drag);
+        e.append("circle").attr("class","base");
+        e.append("circle").attr("class","orph");
+        e.append("circle").attr("class","ent");
+        e.append("text").attr("class","node-label");
+        return e;},
+      update=>update,
+      exit=>exit.remove()
+    );
+  grp.each(function(d){
+    const el=d3.select(this);
+    el.select("circle.base")
+      .attr("r",r(d))
+      .attr("fill",colors[d.type]||colors.other)
+      .attr("fill-opacity",0.72)
+      .attr("stroke","#0a0a0f").attr("stroke-width",1.2);
+    el.select("circle.orph")
+      .classed("o",!(gsets.out.get(d.id)?.size||gsets.inc.get(d.id)?.size))
+      .attr("r",r(d)+3)
+      .attr("fill","none").attr("stroke","rgba(255,255,255,.14)").attr("stroke-width",1)
+      .attr("stroke-dasharray","2 3").style("pointer-events","none");
+    if(!el.select("circle.orph").classed("o"))el.select("circle.orph").attr("r",0);
+    el.select("circle.ent")
+      .classed("e",ENTRY_RE.test(d.name))
+      .attr("r",r(d)+4)
+      .attr("fill","none").attr("stroke",accent).attr("stroke-width",1.5).style("pointer-events","none");
+    if(!el.select("circle.ent").classed("e"))el.select("circle.ent").attr("r",0);
+    el.select("text.node-label").text(d.name)
+      .attr("dx",r(d)+10).attr("dy",4)
+      .attr("font-size",11).attr("font-family","JetBrains Mono,ui-monospace,Menlo,monospace").attr("fill","#8a8f98");
+  });
+  bindEvents();
+  if(hovered!==null)setHighlight(pinned||hovered,hoverShift);
+  if(radialMode)place();
+}
+
+function bindEvents(){
+  nodeSel.selectAll("g")
+    .on("mouseover",(e,d)=>{hoverShift=e.shiftKey;if(!pinned||pinned===d.id){setHighlight(d.id,e.shiftKey)}showTooltip(e,d)})
+    .on("mousemove",moveTooltip)
+    .on("mouseout",()=>{hideTooltip();if(!pinned)setHighlight(pinned,hoverShift)})
+    .on("click",(e,d)=>{const moved=Math.hypot(d.x-(d._sx??d.x),d.y-(d._sy??d.y));if(moved>4)return;togglePin(d)});
+}
+
+function place(){
+  linkSel.selectAll("line").attr("x1",d=>d.source.x).attr("y1",d=>d.source.y).attr("x2",d=>d.target.x).attr("y2",d=>d.target.y);
+  nodeSel.selectAll("g").attr("transform",d=>"translate("+d.x+","+d.y+")");
+}
+
+/* current graph computation on demand */
+let cur={out:gsets.out,inc:gsets.inc,adj:gsets.adj,cycleSet:new Set(),settled:grings.settled,dist:grings.dist,maxD:grings.maxD};
+
+function computeCurrent(){
+  const s=mkSets(nodes,links);
+  const cy=tarjan(nodes,s.out,s.inc);
+  const rg=rings(nodes,links,s.children,s.indeg);
+  cur={out:s.out,inc:s.inc,adj:s.adj,cycleSet:cy,settled:rg.settled,dist:rg.dist,maxD:rg.maxD};
+  return rg;
+}
+
+/* ---- traversal helpers ---- */
+function trace(id){
+  const down=new Set([id]),up=new Set([id]);
+  const a=[id];
+  while(a.length){const v=a.pop();cur.out.get(v).forEach(t=>{if(!down.has(t)){down.add(t);a.push(t)}})}
+  const b=[id];
+  while(b.length){const v=b.pop();cur.inc.get(v).forEach(t=>{if(!up.has(t)){up.add(t);b.push(t)}})}
+  return {down,up};
+}
+function onCycle(id){return cur.cycleSet.has(id)}
+function ringFor(n){return cur.settled.has(n.id)?cur.dist[n.id]:cur.maxD+1}
+
+function setHighlight(id,traceAll){
+  hovered=id;
+  if(!id){
+    nodeSel.selectAll("g").attr("opacity",1);
+    linkSel.selectAll("line").attr("opacity",0.55).attr("stroke",edge).attr("stroke-width",1.2);
+    nodeSel.selectAll("circle.base").attr("stroke","#0a0a0f").attr("stroke-width",1.2).attr("fill-opacity",0.72);
+    return;
+  }
+  const tr=traceAll?trace(id):null;
+  const nb=cur.adj.get(id);
+  const inScc=traceAll&&onCycle(id);
+  nodeSel.selectAll("g").attr("opacity",d=>{
+    if(d.id===id)return 1;
+    if(tr)return (tr.down.has(d.id)||tr.up.has(d.id)|| (inScc&&onCycle(d.id)))?0.85:0.12;
+    return (nb.has(d.id))?1:0.2;
+  });
+  linkSel.selectAll("line").attr("opacity",l=>{
+    const s=srcOf(l),t=tgtOf(l);
+    const sId=s===id;
+    if(!traceAll)return (sId||t===id)?1:0.12;
+    if(sId||t===id)return 0.9;
+    if((tr.down.has(s)&&tr.down.has(t))||(tr.up.has(s)&&tr.up.has(t))||(inScc&&onCycle(s)&&onCycle(t)))return 0.7;
+    return 0.06;
+  }).attr("stroke",l=>{
+    const s=srcOf(l),t=tgtOf(l);
+    if(!traceAll)return (s===id||t===id)?accent:edge;
+    if((tr.down.has(s)&&tr.down.has(t))||(inScc&&onCycle(s)&&onCycle(t)))return downstream;
+    if((tr.up.has(s)&&tr.up.has(t)))return upstream;
+    if(s===id||t===id)return accent;
+    return edge;
+  }).attr("stroke-width",l=>{
+    const s=srcOf(l),t=tgtOf(l);
+    if(!traceAll)return (s===id||t===id)?2.4:1.2;
+    if(s===id||t===id)return 2.6;
+    return 1.2;
+  });
+  nodeSel.selectAll("circle.base")
+    .attr("stroke",d=>{
+      if(d.id===id)return accent;
+      if(inScc&&onCycle(d.id))return accent;
+      return "#0a0a0f";
+    })
+    .attr("stroke-width",d=>{
+      if(d.id===id)return 2.5;
+      if(inScc&&onCycle(d.id))return 1.8;
+      return 1.2;
+    })
+    .attr("fill-opacity",d=>{
+      if(d.id===id)return 1;
+      if(inScc&&onCycle(d.id))return 1;
+      return 0.72;
+    });
+}
+
+/* ---- tooltip ---- */
+const tt=document.getElementById("tooltip");
+function showTooltip(e,d){
+  tt.style.display="block";
+  const imp=cur.out.get(d.id).size,impby=cur.inc.get(d.id).size;
+  let html="<b>"+d.id+"</b><br><span class='dim'>"+d.type+" &middot; "+d.lines+" lines</span><br>"+
+    "imports <b>"+imp+"</b> file(s) &middot; imported by <b>"+impby+"</b> file(s)";
+  if(hoverShift){const tr=trace(d.id);html+="<br><span class='dim'>trace</span> &rarr; <b>"+(tr.down.size-1)+"</b> down &middot; <b>"+(tr.up.size-1)+"</b> up";}
+  if(onCycle(d.id))html+="<br><span class='dim'>in a dependency cycle</span>";
+  tt.innerHTML=html;
+}
+function moveTooltip(e){tt.style.left=(e.pageX+14)+"px";tt.style.top=(e.pageY-10)+"px"}
+function hideTooltip(){tt.style.display="none"}
+
+/* ---- pin + node actions ---- */
+const na=document.getElementById("nodeactions");
+const naPath=document.getElementById("napath");
+function showActions(d){
+  naPath.textContent=d.id;
+  na.style.display="flex";
+  naRead.dataset.path=d.id;
+  naAsk.dataset.path=d.id;
+}
+function hideActions(){na.style.display="none"}
+naRead.addEventListener("click",()=>{window.parent.postMessage({type:"cb-open-file",path:naRead.dataset.path},"*")});
+naAsk.addEventListener("click",()=>{window.parent.postMessage({type:"cb-ask",text:"What does "+naAsk.dataset.path+" do?"},"*")});
+
+function togglePin(d){
+  if(hovered&&d.id!==hovered)return;
+  pinned=pinned===d.id?null:d.id;
+  const f=statsEl.querySelector(".focus");
+  if(pinned){
+    const tr=trace(d.id);
+    f.style.display="block";
+    f.innerHTML="<b>"+d.id+"</b>"+
+      "<br>imports <b>"+cur.out.get(d.id).size+"</b> direct &middot; <b>"+(tr.down.size-1)+"</b> transitive"+
+      "<br>imported by <b>"+cur.inc.get(d.id).size+"</b> direct &middot; <b>"+(tr.up.size-1)+"</b> transitive"+
+      (onCycle(d.id)?"<br>in a dependency cycle":"")+
+      "<br><span class='dim'>Esc to clear</span>";
+    showActions(d);
+  }else{f.style.display="none";hideActions();}
+  setHighlight(pinned,hoverShift);
+}
+function clearPinned(){
+  if(!pinned)return;
+  pinned=null;
+  statsEl.querySelector(".focus").style.display="none";
+  hideActions();
+  setHighlight(null,false);
+}
+
+/* ---- stats ---- */
+const statsEl=document.getElementById("stats");
+function updateStats(){
+  statsEl.querySelectorAll(".stat b")[0].textContent=data.stats.total_nodes;
+  statsEl.querySelectorAll(".stat b")[1].textContent=data.stats.total_edges;
+  if(data.stats.most_imported.length)
+    statsEl.querySelector(".top").innerHTML="Top: <b>"+data.stats.most_imported.map(n=>n.name+" ("+n.count+")").join(", ")+"</b>";
+  if(data.stats.orphan_files.length)
+    statsEl.querySelector(".orphan").innerHTML="Orphans: <b>"+data.stats.orphan_files.length+"</b>";
+  const sccs=[...new Set([...cur.cycleSet])];
+  if(sccs.length){
+    statsEl.querySelector(".cycles").style.display="block";
+    statsEl.querySelector(".cycles").innerHTML="Cycles: <b>"+cur.cycleSet.size+"</b>";
+  }
+}
+
+/* ---- find ---- */
+const findEl=document.getElementById("find");
+function clearFind(){
+  findEl.value="";
+  setHighlight(pinned,hoverShift);
+}
+findEl.addEventListener("input",()=>{
+  const q=findEl.value.trim().toLowerCase();
+  if(!q){setHighlight(pinned,hoverShift);return;}
+  const m=new Set(nodes.filter(n=>n.id.toLowerCase().includes(q)||n.name.toLowerCase().includes(q)).map(n=>n.id));
+  nodeSel.selectAll("g").attr("opacity",d=>m.has(d.id)?1:0.1);
+  linkSel.selectAll("line").attr("opacity",l=>(m.has(srcOf(l))&&m.has(tgtOf(l)))?0.5:0.05);
+});
+findEl.addEventListener("keydown",e=>{
+  if(e.key==="Enter"){
+    const q=findEl.value.trim().toLowerCase();
+    const m=nodes.find(n=>n.id.toLowerCase().includes(q)||n.name.toLowerCase().includes(q));
+    if(!m)return;
+    const x=m.x??m.fx??w/2,y=m.y??m.fy??h/2;
+    svg.transition().duration(reduce?0:600)
+      .call(zoom.transform,d3.zoomIdentity.translate(w/2-x*1.5,h/2-y*1.5).scale(1.5));
+    pinned=m.id;hoverShift=false;
+    statsEl.querySelector(".focus").style.display="block";
+    const tr=trace(m.id);
+    statsEl.querySelector(".focus").innerHTML="<b>"+m.id+"</b>"+
+      "<br>imports <b>"+cur.out.get(m.id).size+"</b> direct &middot; <b>"+(tr.down.size-1)+"</b> transitive"+
+      "<br>imported by <b>"+cur.inc.get(m.id).size+"</b> direct &middot; <b>"+(tr.up.size-1)+"</b> transitive"+
+      (onCycle(m.id)?"<br>in a dependency cycle":"")+
+      "<br><span class='dim'>Esc to clear</span>";
+    showActions(m);
+    setHighlight(m.id,false);
+  }
 });
 
-function dragStart(e, d) { if (!e.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; }
-function dragging(e, d) { d.fx = e.x; d.fy = e.y; }
-function dragEnd(e, d) { if (!e.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; }
+/* ---- radial (traversal) layout ---- */
+const RING_BASE=85,RING_STEP=95;
+const ringR=rk=>{let a=RING_BASE;for(let i=1;i<=rk;i++)a+=Math.max(32,RING_STEP-i*8);return a};
+function layoutRadial(){
+  const buckets={};
+  nodes.forEach(n=>{
+    const r=ringFor(n);
+    (buckets[r]=buckets[r]||[]).push(n);
+    n._r=r;
+  });
+  Object.keys(buckets).forEach(r=>{
+    const list=buckets[r];
+    list.sort((a,b)=>clusterKey(a).localeCompare(clusterKey(b))||((cur.inc.get(b.id).size-cur.out.get(b.id).size)-(cur.inc.get(a.id).size-cur.out.get(a.id).size)));
+    const n=list.length,step=n>1?(2*Math.PI)/n:0,off=(+r%2)*(Math.PI/(n||1));
+    list.forEach((nd,i)=>{
+      const a=-Math.PI/2+off+i*step;
+      nd._ring=ringR(+r);
+      nd.x=Math.max(0,Math.min(w,w/2+Math.cos(a)*nd._ring));
+      nd.y=Math.max(0,Math.min(h,h/2+Math.sin(a)*nd._ring));
+    });
+  });
+  place();
+}
+function setRadial(on){
+  radialMode=on;
+  const b=d3.select("#layoutMode");
+  b.text(on?"Force":"Radial").classed("active",on);
+  if(on){
+    computeCurrent();
+    layoutRadial();
+    sim.stop();
+    place();
+  }else{
+    nodes.forEach(n=>{n.fx=null;n.fy=null});
+    sim.alpha(.6).restart();
+    place();
+  }
+}
+d3.select("#layoutMode").on("click",()=>setRadial(!radialMode));
+
+/* ---- zoom ---- */
+const zoom=d3.zoom().scaleExtent([.1,5])
+  .on("zoom",e=>{zoomK=e.transform.k;g.attr("transform",e.transform);g.classed("labels-off",zoomK<0.55)})
+  .on("start",()=>d3.select("#graph").classed("dragging",true))
+  .on("end",()=>d3.select("#graph").classed("dragging",false));
+svg.call(zoom);
+svg.on("click",e=>{if(e.target===(svg.select("rect").node())){clearPinned();clearFind();}});
+svg.select("rect").on("dblclick",()=>{svg.call(zoom.transform,d3.zoomIdentity)});
+
+/* ---- filters ---- */
+function applyFilter(){
+  pinned=null;
+  statsEl.querySelector(".focus").style.display="none";
+  hideActions();
+  hovered=null;
+  nodes=allNodes.filter(visible);
+  links=allLinks.filter(l=>visible(srcOf(l))&&visible(tgtOf(l)));
+  rebuildSim();
+  computeCurrent();
+  updateStats();
+  const noEl=document.getElementById("none");
+  noEl.style.display=(!radialMode&&links.length===0)?"flex":"none";
+  if(radialMode)setRadial(true);
+  else{
+    draw();
+    sim.alpha(.5).restart();
+  }
+  if(reduce){
+    sim.stop().alpha(0);
+  }
+}
+
+d3.select("#hideTests").on("click",()=>{
+  hideTests=!hideTests;
+  d3.select("#hideTests").classed("active",hideTests);
+  applyFilter();
+});
+dirSel.addEventListener("change",()=>{
+  dirFilter=dirSel.value;
+  applyFilter();
+});
+
+svg.style("opacity",0).transition().duration(reduce?0:600).ease(d3.easeCubicOut).style("opacity",1);
+
+window.addEventListener("keydown",e=>{
+  if(e.key==="Escape"){clearPinned();clearFind();}
+});
+
+computeCurrent();
+updateStats();
+rebuildSim();
+draw();
+setRadial(true);
+
+if(reduce){
+  sim.stop().alpha(0);
+}
 </script>
 </body>
 </html>
