@@ -30,6 +30,7 @@ const els = {
   graphBody: $("#cb-graph-body"),
   overlay: $("#cb-overlay"),
   overlayPath: $("#cb-overlay-path"),
+  overlayOpen: $("#cb-overlay-open"),
   overlayAsk: $("#cb-overlay-ask"),
   overlayClose: $("#cb-overlay-close"),
   overlayBody: $("#cb-overlay-body"),
@@ -238,14 +239,14 @@ function linkFiles(root) {
   const paths = (state.files || []).filter(Boolean).sort((a, b) => b.length - a.length);
   if (!paths.length) return;
   const re = new RegExp(
-    "([^A-Za-z0-9_./\\\\-])(" +
+    "(^|[^A-Za-z0-9_./\\\\-])(" +
       paths.map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") +
-      ")(?=$|[^A-Za-z0-9_./\\\\-])",
+      ")(?:#L(\\d+)(?:-L?(\\d+))?|:(\\d+))?(?=$|[^A-Za-z0-9_./\\\\-])",
     "g"
   );
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode(n) {
-      if (n.parentElement.closest("pre,code,a,button,span.filelink")) return NodeFilter.FILTER_REJECT;
+      if (n.parentElement.closest("pre,a,button,span.filelink")) return NodeFilter.FILTER_REJECT;
       return NodeFilter.FILTER_ACCEPT;
     },
   });
@@ -264,6 +265,13 @@ function linkFiles(root) {
       span.className = "filelink";
       span.textContent = m[2];
       span.dataset.path = m[2];
+      if (m[3]) {
+        span.dataset.lineStart = m[3];
+        span.dataset.lineEnd = m[4] || m[3];
+      } else if (m[5]) {
+        span.dataset.lineStart = m[5];
+        span.dataset.lineEnd = m[5];
+      }
       frag.appendChild(span);
       last = m.index + m[1].length + m[2].length;
     }
@@ -287,7 +295,15 @@ function renderSources(items) {
       (s) =>
         '<button type="button" class="src" data-path="' +
         esc(s.source || "") +
-        '" title="View ' +
+        '"' +
+        (s.start_line
+          ? ' data-line-start="' +
+            esc(String(s.start_line)) +
+            '" data-line-end="' +
+            esc(String(s.end_line || s.start_line)) +
+            '"'
+          : "") +
+        ' title="View ' +
         esc(s.source || "") +
         '">' +
         esc(s.source || "") +
@@ -314,15 +330,19 @@ function addStep(text) {
 }
 
 function closeOverlay() {
-  els.overlay.hidden = true;
+  els.overlay.classList.add("hidden");
   els.overlayBody.innerHTML = "";
 }
 
-async function openFile(path) {
+async function openFile(path, lineStart, lineEnd) {
   els.overlayPath.textContent = path || "";
   els.overlayAsk.dataset.path = path || "";
-  els.overlay.hidden = false;
+  els.overlay.classList.remove("hidden");
   els.overlayBody.innerHTML = '<p class="hint">Loading…</p>';
+  const target = (lineStart && Number(lineStart)) || null;
+  els.overlayOpen.dataset.path = path || "";
+  els.overlayOpen.dataset.lineStart = target || "";
+  els.overlayOpen.dataset.lineEnd = (lineEnd && Number(lineEnd)) || target || "";
   let data;
   try {
     const res = await fetch("/api/file?path=" + encodeURIComponent(path || ""));
@@ -352,6 +372,7 @@ async function openFile(path) {
     t.textContent = line;
     row.append(g, t);
     pre.appendChild(row);
+    if (target && no >= target && no <= (Number(lineEnd) || target)) row.classList.add("hit");
   });
   els.overlayBody.appendChild(pre);
   if (data.truncated) {
@@ -360,12 +381,20 @@ async function openFile(path) {
     note.textContent = "File truncated — showing first " + data.lines.length + " of " + data.total_lines + " lines.";
     els.overlayBody.appendChild(note);
   }
-  if (overlayPrevPath !== path) {
+  if (overlayPrevPath !== path || overlayPrevLine !== target) {
     overlayPrevPath = path;
-    els.overlayBody.scrollTop = 0;
+    overlayPrevLine = target;
+    const line = els.overlayBody.querySelector(".oline.hit") || els.overlayBody.querySelector(".oline");
+    if (line) {
+      line.scrollIntoView({ block: "center" });
+      els.overlayBody.scrollTop -= 40;
+    } else {
+      els.overlayBody.scrollTop = 0;
+    }
   }
 }
 let overlayPrevPath = null;
+let overlayPrevLine = null;
 
 function runSearch(immediate) {
   const q = els.searchInput.value.trim();
@@ -426,7 +455,15 @@ function renderResults(results) {
       '<div class="ract">' +
       '<button class="act" data-a="open" data-path="' +
       esc(r.source) +
-      '">Open</button>' +
+      '"' +
+      (r.start_line
+        ? ' data-line-start="' +
+          esc(String(r.start_line)) +
+          '" data-line-end="' +
+          esc(String(r.end_line || r.start_line)) +
+          '"'
+        : "") +
+      ">Open</button>" +
       '<button class="act" data-a="ask" data-path="' +
       esc(r.source) +
       '">Ask</button></div>';
@@ -882,6 +919,17 @@ async function clearIndex() {
     els.status.textContent = data.status || "Index cleared.";
     state.graphHtml = "";
     state.files = [];
+    state.history = [];
+    els.messages.innerHTML = "";
+    els.searchResults.innerHTML = "";
+    els.graphBody.innerHTML = "";
+    els.graphBody.style.display = "";
+    els.searchInput.value = "";
+    renderSearchHint("Search the codebase for functions, symbols, error strings — results link straight to the source.");
+    activeMsg = null;
+    overlayPrevPath = null;
+    overlayPrevLine = null;
+    refreshEmpty();
   } catch (e) {
     els.status.textContent = "Error: " + e.message;
   } finally {
@@ -954,6 +1002,17 @@ async function fetchInfo() {
   } catch (e) {
     /* skip */
   }
+  try {
+    const r = await fetch("/api/files");
+    const d = await r.json();
+    if (Array.isArray(d.files) && d.files.length) {
+      state.files = d.files;
+      els.source.value = d.repo || "";
+      document.querySelectorAll(".bubble").forEach(linkFiles);
+    }
+  } catch (e) {
+    /* skip */
+  }
 }
 
 window.addEventListener("message", (e) => {
@@ -990,15 +1049,33 @@ els.quick.addEventListener("click", (e) => {
 });
 
 els.messages.addEventListener("click", (e) => {
+  const a = e.target.closest("a");
+  if (a) {
+    const href = a.getAttribute("href") || "";
+    if (href && !/^(https?:|mailto:|tel:|#)/i.test(href)) {
+      const path = href.split("#")[0].replace(/^\/+/, "").replace(/:\d+$/, "");
+      const lm = href.match(/#L(\d+)(?:-L?(\d+))?|:(\d+)$/);
+      const known = (state.files || []).includes(path);
+      if (known || /\.\w{1,5}$/.test(path)) {
+        e.preventDefault();
+        openFile(
+          path,
+          (lm && (lm[1] || lm[3])) || null,
+          (lm && (lm[2] || lm[1] || lm[3])) || null
+        );
+        return;
+      }
+    }
+  }
   const src = e.target.closest(".src");
   if (src && src.dataset.path) {
-    openFile(src.dataset.path);
+    openFile(src.dataset.path, src.dataset.lineStart, src.dataset.lineEnd);
     return;
   }
   const fl = e.target.closest(".filelink");
   if (fl && fl.dataset.path) {
     e.preventDefault();
-    openFile(fl.dataset.path);
+    openFile(fl.dataset.path, fl.dataset.lineStart, fl.dataset.lineEnd);
     return;
   }
   const act = e.target.closest(".act");
@@ -1034,7 +1111,7 @@ window.addEventListener("keydown", (e) => {
     e.preventDefault();
     switchTo("search");
   } else if (e.key === "Escape") {
-    if (!els.overlay.hidden) closeOverlay();
+    if (!els.overlay.classList.contains("hidden")) closeOverlay();
     else els.searchInput.blur();
   }
 });
@@ -1055,7 +1132,7 @@ els.searchInput.addEventListener("keydown", (e) => {
 els.searchResults.addEventListener("click", (e) => {
   const btn = e.target.closest(".act");
   if (!btn || !btn.dataset.path) return;
-  if (btn.dataset.a === "open") openFile(btn.dataset.path);
+  if (btn.dataset.a === "open") openFile(btn.dataset.path, btn.dataset.lineStart, btn.dataset.lineEnd);
   else if (btn.dataset.a === "ask") askAbout(btn.dataset.path);
 });
 
@@ -1065,9 +1142,34 @@ els.overlay.addEventListener("click", (e) => {
   if (e.target === els.overlay) closeOverlay();
 });
 
+els.overlayOpen.addEventListener("click", async () => {
+  const path = els.overlayOpen.dataset.path || "";
+  if (!path) return;
+  let data;
+  try {
+    const res = await fetch("/api/open", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        path,
+        line_start: els.overlayOpen.dataset.lineStart ? Number(els.overlayOpen.dataset.lineStart) : null,
+        line_end: els.overlayOpen.dataset.lineEnd ? Number(els.overlayOpen.dataset.lineEnd) : null,
+      }),
+    });
+    data = await res.json();
+  } catch (e) {
+    data = { error: e.message };
+  }
+  if (data.url) window.open(data.url, "_blank", "noopener");
+  else if (data.opened) closeOverlay();
+  else if (data.error) els.overlayBody.innerHTML = '<p class="hint">' + esc(data.error) + "</p>";
+});
+
 els.viewChat.addEventListener("click", (e) => {
   if (e.target === els.input || e.target === els.send) return;
   if (e.target.closest("a, button, input, select, textarea, iframe")) return;
+  const sel = window.getSelection();
+  if (sel && !sel.isCollapsed) return;
   els.input.focus();
 });
 

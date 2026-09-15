@@ -1348,6 +1348,16 @@ kbd {
   display: flex;
 }
 
+.oline.hit {
+  background: rgba(255, 152, 77, 0.14);
+  background: color-mix(in srgb, var(--cb-accent) 14%, transparent);
+}
+
+.oline.hit .ogutter {
+  color: var(--cb-accent);
+  font-weight: 600;
+}
+
 .ogutter {
   width: 48px;
   flex: none;
