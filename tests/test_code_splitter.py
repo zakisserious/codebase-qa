@@ -36,7 +36,7 @@ class TestSplitDocuments:
         doc = Document(
             page_content=(
                 "use std::collections::HashMap;\n\n"
-                "fn main() {\n    println!(\"hello\");\n}\n\n"
+                'fn main() {\n    println!("hello");\n}\n\n'
                 "struct Config {\n    name: String,\n}\n\n"
                 "fn parse(input: &str) -> i32 {\n    input.len() as i32\n}\n"
             ),
