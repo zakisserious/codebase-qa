@@ -14,9 +14,32 @@ logger = logging.getLogger(__name__)
 SUPPORTED_EXTENSIONS = {
     ".py",
     ".js",
+    ".mjs",
+    ".cjs",
     ".ts",
     ".tsx",
     ".jsx",
+    ".rs",
+    ".go",
+    ".java",
+    ".c",
+    ".h",
+    ".cpp",
+    ".cc",
+    ".cxx",
+    ".hpp",
+    ".cs",
+    ".rb",
+    ".php",
+    ".swift",
+    ".kt",
+    ".kts",
+    ".sh",
+    ".bash",
+    ".lua",
+    ".r",
+    ".dart",
+    ".scala",
     ".css",
     ".html",
     ".md",
@@ -25,7 +48,7 @@ SUPPORTED_EXTENSIONS = {
     ".yaml",
     ".yml",
     ".toml",
-    ".rs",
+    ".sql",
 }
 
 SKIP_DIRS = {
@@ -62,10 +85,18 @@ def _parse_github_url(url: str) -> str:
     return base + ".git"
 
 
-def clone_and_parse(github_url: str) -> tuple[list[Document], dict]:
+def clone_and_parse(github_url: str, clone_to: str | None = None) -> tuple[list[Document], dict]:
     repo_url = _parse_github_url(github_url)
     repo_name = repo_url.split("/")[-1].replace(".git", "")
     logger.info("Cloning %s...", repo_url)
+
+    if clone_to:
+        repo_path = os.path.join(clone_to, repo_name)
+        try:
+            git.Repo.clone_from(repo_url, repo_path, depth=1)
+            return _read_repo(Path(repo_path), repo_name, github_url, size_cap_mb=MAX_REPO_SIZE_MB)
+        except git.exc.GitCommandError as e:
+            raise ValueError(f"Failed to clone repository: {e}") from e
 
     tmp_dir = tempfile.mkdtemp(prefix="codebase_qa_")
     repo_path = os.path.join(tmp_dir, repo_name)

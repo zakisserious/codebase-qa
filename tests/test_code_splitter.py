@@ -1,6 +1,6 @@
 from langchain_core.documents import Document
 
-from rag.code_splitter import _get_ts_query_nodes, _split_python, split_documents
+from rag.code_splitter import TS_QUERIES, _get_ts_query_nodes, _load_parser, _split_python, split_documents
 
 
 class TestSplitDocuments:
@@ -18,6 +18,36 @@ class TestSplitDocuments:
         chunks = split_documents([doc], chunk_size=200)
         assert len(chunks) > 1
         assert all(c.metadata["node_type"] == "text" for c in chunks)
+
+    def test_fallback_line_numbers(self):
+        doc = Document(
+            page_content="".join(f"line {i}\n" for i in range(1, 101)),
+            metadata={"source": "notes.yaml"},
+        )
+        chunks = split_documents([doc], chunk_size=60)
+        assert len(chunks) > 2
+        starts = [c.metadata["start_line"] for c in chunks]
+        assert starts == sorted(starts)
+        assert starts[1] > 1
+        for i, a in enumerate(chunks[:-1]):
+            assert a.metadata["end_line"] == chunks[i + 1].metadata["start_line"]
+
+    def test_rust_splitting(self):
+        doc = Document(
+            page_content=(
+                "use std::collections::HashMap;\n\n"
+                "fn main() {\n    println!(\"hello\");\n}\n\n"
+                "struct Config {\n    name: String,\n}\n\n"
+                "fn parse(input: &str) -> i32 {\n    input.len() as i32\n}\n"
+            ),
+            metadata={"source": "lib.rs"},
+        )
+        chunks = split_documents([doc], chunk_size=500)
+        functions = [c for c in chunks if c.metadata.get("node_type") == "function"]
+        structs = [c for c in chunks if c.metadata.get("node_type") == "struct"]
+        assert functions and structs
+        assert functions[0].metadata["start_line"] > 1
+        assert structs[0].metadata["start_line"] > functions[0].metadata["start_line"]
 
     def test_empty_input(self):
         chunks = split_documents([], chunk_size=1000)
@@ -74,3 +104,9 @@ class TestTreeSitterQueries:
 
     def test_unknown_lang_returns_none(self):
         assert _get_ts_query_nodes("unknown") is None
+
+    def test_all_queries_compile(self):
+        for lang, query in TS_QUERIES.items():
+            parser, language = _load_parser(lang)
+            assert parser is not None, f"no parser for {lang}"
+            language.query(query)

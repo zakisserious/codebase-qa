@@ -4,13 +4,59 @@ import os
 from pathlib import Path
 
 from langchain_core.documents import Document
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 logger = logging.getLogger(__name__)
 
 SUPPORTED_AST = {".py"}
-SUPPORTED_TREE_SITTER = {".js", ".ts", ".tsx", ".jsx"}
-FALLBACK_EXTS = {".css", ".html", ".md", ".txt", ".json", ".yaml", ".yml", ".toml"}
+
+EXT_LANG = {
+    ".js": "javascript",
+    ".mjs": "javascript",
+    ".cjs": "javascript",
+    ".jsx": "jsx",
+    ".ts": "typescript",
+    ".tsx": "tsx",
+    ".rs": "rust",
+    ".go": "go",
+    ".java": "java",
+    ".c": "c",
+    ".h": "c",
+    ".cpp": "cpp",
+    ".cc": "cpp",
+    ".cxx": "cpp",
+    ".hpp": "cpp",
+    ".cs": "c_sharp",
+    ".rb": "ruby",
+    ".php": "php",
+    ".swift": "swift",
+    ".kt": "kotlin",
+    ".kts": "kotlin",
+    ".sh": "bash",
+    ".bash": "bash",
+    ".lua": "lua",
+    ".r": "r",
+    ".dart": "dart",
+    ".scala": "scala",
+}
+
+TS_QUERIES = {
+    "javascript": "(function_declaration) @function (class_declaration) @class (import_statement) @imports",
+    "typescript": "(function_declaration) @function (class_declaration) @class (import_statement) @imports (interface_declaration) @interface (type_alias_declaration) @type",
+    "tsx": "(function_declaration) @function (class_declaration) @class (import_statement) @imports (interface_declaration) @interface",
+    "rust": "(function_item) @function (struct_item) @struct (enum_item) @enum (trait_item) @trait (impl_item) @impl (mod_item) @module (use_declaration) @imports",
+    "go": "(function_declaration) @function (method_declaration) @method (type_declaration) @type (import_declaration) @imports",
+    "java": "(class_declaration) @class (interface_declaration) @interface (method_declaration) @method (import_declaration) @imports",
+    "c": "(function_definition) @function (struct_specifier) @struct (enum_specifier) @enum (preproc_include) @imports",
+    "cpp": "(function_definition) @function (class_specifier) @class (struct_specifier) @struct (namespace_definition) @module (preproc_include) @imports",
+    "c_sharp": "(class_declaration) @class (struct_declaration) @struct (interface_declaration) @interface (method_declaration) @method (namespace_declaration) @module (using_directive) @imports",
+    "ruby": "(method) @function (class) @class (module) @module",
+    "php": "(function_definition) @function (class_declaration) @class (namespace_definition) @module",
+    "kotlin": "(function_declaration) @function (class_declaration) @class (object_declaration) @class (import_header) @imports",
+    "bash": "(function_definition) @function",
+    "lua": "(function_definition_statement) @function",
+    "r": "(function_definition) @function",
+    "scala": "(object_definition) @object (class_definition) @class (trait_definition) @interface (function_definition) @function",
+}
 
 
 def split_documents(
@@ -22,17 +68,10 @@ def split_documents(
         chunk_size = int(os.getenv("CHUNK_SIZE", "1000"))
     if chunk_overlap is None:
         chunk_overlap = int(os.getenv("CHUNK_OVERLAP", "100"))
-    if chunk_overlap >= chunk_size:
-        chunk_overlap = max(chunk_size - 1, 0)
 
     logger.info("Splitting %d documents (chunk_size=%d, overlap=%d)", len(documents), chunk_size, chunk_overlap)
 
     chunks: list[Document] = []
-    fallback_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap,
-        separators=["\n\n", "\n", " ", ""],
-    )
 
     for doc in documents:
         source = doc.metadata.get("source", "")
@@ -40,18 +79,11 @@ def split_documents(
 
         if ext in SUPPORTED_AST:
             chunks.extend(_split_python(doc, chunk_size))
-        elif ext in SUPPORTED_TREE_SITTER:
-            chunks.extend(_split_js_ts(doc, chunk_size))
+        elif ext in EXT_LANG:
+            split = _split_tree_sitter(doc, chunk_size, ext)
+            chunks.extend(split or _split_lines(doc, chunk_size))
         else:
-            split = fallback_splitter.split_documents([doc])
-            for s in split:
-                s.metadata = {
-                    **doc.metadata,
-                    "node_type": "text",
-                    "start_line": 1,
-                    "end_line": s.page_content.count("\n") + 1,
-                }
-            chunks.extend(split)
+            chunks.extend(_split_lines(doc, chunk_size))
 
     logger.info("Produced %d chunks from %d documents", len(chunks), len(documents))
     return chunks
@@ -190,112 +222,96 @@ def _split_large_node(doc: Document, node: ast.AST, lines: list[str], chunk_size
     return chunks
 
 
-def _split_js_ts(doc: Document, chunk_size: int) -> list[Document]:
-    try:
-        import tree_sitter_languages
-    except ImportError:
-        logger.debug("tree-sitter not available, falling back to raw text for %s", doc.metadata.get("source"))
-        return [
-            Document(
-                page_content=doc.page_content,
-                metadata={
-                    **doc.metadata,
-                    "node_type": "text",
-                    "start_line": 1,
-                    "end_line": doc.page_content.count("\n") + 1,
-                },
-            )
-        ]
-
-    ext = Path(doc.metadata.get("source", "")).suffix
-    lang_map = {".js": "javascript", ".ts": "typescript", ".tsx": "tsx", ".jsx": "jsx"}
-    lang_name = lang_map.get(ext, "javascript")
-
-    try:
-        parser = tree_sitter_languages.get_parser(lang_name)
-    except Exception:
-        logger.debug("Could not get tree-sitter parser for %s", lang_name)
-        return [
-            Document(
-                page_content=doc.page_content,
-                metadata={
-                    **doc.metadata,
-                    "node_type": "text",
-                    "start_line": 1,
-                    "end_line": doc.page_content.count("\n") + 1,
-                },
-            )
-        ]
-
-    tree = parser.parse(doc.page_content.encode("utf-8"))
+def _split_lines(doc: Document, chunk_size: int) -> list[Document]:
+    """Line-accurate fallback: chunks keep their real line positions in the file."""
     chunks: list[Document] = []
-
-    query_nodes = _get_ts_query_nodes(lang_name)
-    if query_nodes:
-        try:
-            query = parser.language.query(query_nodes)
-            captures = query.captures(tree.root_node)
-            for name, nodes in captures.items():
-                for node in nodes:
-                    start_line = node.start_point[0] + 1
-                    end_line = node.end_point[0] + 1
-                    text = node.text.decode("utf-8", errors="replace")
-
-                    if len(text) <= chunk_size:
-                        chunks.append(
-                            Document(
-                                page_content=text,
-                                metadata={
-                                    **doc.metadata,
-                                    "node_type": name,
-                                    "start_line": start_line,
-                                    "end_line": end_line,
-                                    "name": _extract_js_name(node),
-                                },
-                            )
-                        )
-                    else:
-                        sub_lines = doc.page_content.splitlines()[start_line - 1 : end_line]
-                        for sub in _chunk_lines(sub_lines, chunk_size, start_line):
-                            chunks.append(
-                                Document(
-                                    page_content=sub["text"],
-                                    metadata={
-                                        **doc.metadata,
-                                        "node_type": f"{name}_part",
-                                        "start_line": sub["start"],
-                                        "end_line": sub["end"],
-                                        "name": _extract_js_name(node),
-                                    },
-                                )
-                            )
-        except Exception as e:
-            logger.warning("tree-sitter query failed for %s: %s", doc.metadata.get("source"), e)
-
-    if not chunks:
+    for sub in _chunk_lines(doc.page_content.splitlines(), chunk_size, 1):
         chunks.append(
             Document(
-                page_content=doc.page_content,
+                page_content=sub["text"],
                 metadata={
                     **doc.metadata,
-                    "node_type": "module",
-                    "start_line": 1,
-                    "end_line": doc.page_content.count("\n") + 1,
+                    "node_type": "text",
+                    "start_line": sub["start"],
+                    "end_line": sub["end"],
                 },
             )
         )
-
     return chunks
 
 
+def _split_tree_sitter(doc: Document, chunk_size: int, ext: str) -> list[Document]:
+    lang_name = EXT_LANG.get(ext)
+    query_nodes = TS_QUERIES.get(lang_name or "")
+    if lang_name is None or query_nodes is None:
+        return []
+
+    parser, language = _load_parser(lang_name)
+    if parser is None:
+        logger.debug("tree-sitter not available for %s", lang_name)
+        return []
+
+    try:
+        tree = parser.parse(doc.page_content.encode("utf-8"))
+        query = language.query(query_nodes)
+        raw = query.captures(tree.root_node)
+    except Exception as e:
+        logger.debug("tree-sitter query failed for %s: %s", doc.metadata.get("source"), e)
+        return []
+
+    captures: dict[str, list] = {}
+    if isinstance(raw, dict):
+        captures = {name: nodes for name, nodes in raw.items()}
+    else:
+        for node, name in raw:
+            captures.setdefault(name, []).append(node)
+
+    chunks: list[Document] = []
+    for name, nodes in captures.items():
+        for node in nodes:
+            start_line = node.start_point[0] + 1
+            end_line = node.end_point[0] + 1
+            text = node.text.decode("utf-8", errors="replace")
+
+            if len(text) <= chunk_size:
+                chunks.append(_ts_chunk(doc, name, text, start_line, end_line, node))
+            else:
+                sub_lines = doc.page_content.splitlines()[start_line - 1 : end_line]
+                for sub in _chunk_lines(sub_lines, chunk_size, start_line):
+                    chunks.append(_ts_chunk(doc, f"{name}_part", sub["text"], sub["start"], sub["end"], node))
+    return chunks
+
+
+def _load_parser(lang_name: str) -> tuple:
+    """Return (parser, language), working with tree-sitter 0.21 and 0.22."""
+    try:
+        import tree_sitter_languages
+
+        parser = tree_sitter_languages.get_parser(lang_name)
+    except Exception:
+        return None, None
+    if hasattr(parser, "language"):
+        return parser, parser.language
+    language = tree_sitter_languages.get_language(lang_name)
+    parser.set_language(language)
+    return parser, language
+
+
+def _ts_chunk(doc: Document, name: str, text: str, start_line: int, end_line: int, node) -> Document:
+    return Document(
+        page_content=text,
+        metadata={
+            **doc.metadata,
+            "node_type": name,
+            "start_line": start_line,
+            "end_line": end_line,
+            "name": _extract_js_name(node),
+        },
+    )
+
+
 def _get_ts_query_nodes(lang_name: str) -> str | None:
-    queries: dict[str, str] = {
-        "javascript": "(function_declaration) @function (class_declaration) @class (import_statement) @imports",
-        "typescript": "(function_declaration) @function (class_declaration) @class (import_statement) @imports (interface_declaration) @interface (type_alias_declaration) @type",
-        "tsx": "(function_declaration) @function (class_declaration) @class (import_statement) @imports (interface_declaration) @interface",
-        "jsx": "(function_declaration) @function (class_declaration) @class (import_statement) @imports",
-    }
-    return queries.get(lang_name)
+    return TS_QUERIES.get(lang_name)
 
 
 def _extract_js_name(node) -> str:
