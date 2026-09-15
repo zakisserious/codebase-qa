@@ -2,8 +2,8 @@
   <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/LangChain-0.3%2B-0B3D91?logo=langchain&logoColor=white" alt="LangChain">
   <img src="https://img.shields.io/badge/FastAPI-blue?logo=fastapi" alt="FastAPI">
-  <img src="https://img.shields.io/badge/ChromaDB-0.5%2B-6D28D9" alt="ChromaDB">
-  <img src="https://img.shields.io/badge/tests-164%20passing-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/ChromaDB-0.6%2B-6D28D9" alt="ChromaDB">
+  <img src="https://img.shields.io/badge/tests-167%20passing-brightgreen" alt="Tests">
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
 </p>
 
@@ -87,7 +87,7 @@ own — like a junior dev with a flashlight and way too much caffeine ☕.
 
 | | |
 |---|---|
-| 🧩 **AST-Aware Code Splitting** | Python is split by function / class / import using the built-in `ast` module; JS/TS uses tree-sitter. Chunks are structural, not character-counted. |
+| 🧩 **AST-Aware Code Splitting** | Python is split by function / class / import using the built-in `ast` module; JS/TS, Rust, Go, Java, C/C++, C#, Ruby, PHP, Kotlin, Bash, Lua, R, and Scala split via tree-sitter. Chunks follow code structure, not character counts. |
 | 🔗 **Source Links with Line Numbers** | Every answer cites `[file#Lstart-Lend]` references you can click and verify; file paths in answers are auto-linked too. |
 | ⚡ **Streaming Responses** | Answers appear token-by-token over SSE, like a real chat. No waiting for a wall of text. |
 | 💬 **Conversational Follow-ups** | Remembers your last 50 turns verbatim; older ones fold into a rolling summary. "How does it handle errors?" works right after "What's the main function?". |
@@ -96,13 +96,13 @@ own — like a junior dev with a flashlight and way too much caffeine ☕.
 | 🕸️ **Dependency Graph** | Interactive D3.js visualization of file imports — drag, zoom, hover, gawk; filter by directory or hide tests, find a file, and click any node to read it or ask about it. |
 | 🕵️ **Agentic Analysis** | A ReAct agent with search, file-read, imports, and definition tools — tool steps stream live above the answer. |
 | 🔍 **Semantic Search** | Search the indexed codebase (Ctrl+K or the Search tab) — results link straight to the source with line ranges. |
-| 📂 **Clickable Files** | Every file mentioned in an answer or search result opens in a line-numbered overlay; graph nodes have Read / Ask actions. |
+| 📂 **Clickable Files** | Every file mentioned in an answer or search result opens in a line-numbered overlay, right at the cited line; an **Open** button jumps to GitHub at that exact line, or opens the file locally. |
 | 🔄 **Incremental Re-indexing** | Re-running Index on the same source only re-embeds changed files (content-hash manifest) — a fast refresh, not a full rebuild. |
 | 💬 **Multiple Sessions** | Save and switch between conversations from the sidebar; new sessions on Ctrl+N. Rename, delete, regenerate, copy. |
 | 📦 **Export Q&A** | Export any session as Markdown or a Jupyter notebook — take your notes with you. |
 | 🧩 **Two Modes** | Quick (plain RAG) or Deep Analysis (tool-using agent) — switch mid-conversation, both share the same index. |
 | 🛡️ **Private by Default** | With the Ollama or local-HuggingFace backends everything runs locally. No cloud, no accounts, no code leaves your machine. |
-| 🐍 **Not Just Python** | Also JS/TS, Rust, and a text fallback (markdown, yaml, JSON, etc.) — all get structural or sensible text chunks. |
+| 🌐 **20+ Languages** | Python (`ast`), tree-sitter splitting for the JS/TS family, Rust, Go, Java, C/C++, C#, Ruby, PHP, Kotlin, Bash, Lua, R, and Scala; text files (Markdown, YAML, JSON, TOML, SQL…) get line-accurate chunks so every citation lands on real lines. |
 
 ---
 
@@ -137,10 +137,14 @@ flowchart LR
    - **Python:** `ast` parses the file into real functions, classes, and
      imports, so a "chunk" is a whole unit of logic — never a mid-`for`-loop
      cut. Large functions are split into header + body slices.
-   - **JS/TS/JSX/TSX:** tree-sitter does the same structural job.
-   - **Rust:** indexed as files (imports are extracted for the graph).
-   - **Everything else:** falls back to recursive character splitting
-     (`CHUNK_SIZE` / `CHUNK_OVERLAP`).
+   - **JS/TS/JSX/TSX, Rust, Go, Java, C/C++, C#, Ruby, PHP, Kotlin, Bash,
+     Lua, R, Scala:** tree-sitter does the same structural job with
+     per-language queries, so functions, classes, structs, enums,
+     interfaces, and imports become first-class chunks.
+   - **Everything else** (Markdown, YAML, JSON, TOML, SQL, CSS, HTML, …):
+     line-accurate chunks — each chunk carries its real `start_line` /
+     `end_line`, so search results and citations point at the exact lines,
+     never a fake "line 1" range.
 4. **Embed** — each chunk becomes a vector. Default: `nomic-embed-text` via
    Ollama; alternatives include `all-MiniLM-L6-v2` locally or via the
    HuggingFace Inference API.
@@ -207,7 +211,7 @@ module owns one concern:
 | `chain.py` | LLM initialization (3 providers), prompt templates, RAG chain construction |
 | `vectorstore.py` | ChromaDB upsert/search/clear, incremental re-indexing with a content-hash manifest |
 | `repo_parser.py` | GitHub cloning, URL validation, local directory walking, size limits, file stats |
-| `code_splitter.py` | AST-aware splitting: `ast` for Python, tree-sitter for JS/TS, text fallback for the rest |
+| `code_splitter.py` | AST-aware splitting: `ast` for Python, tree-sitter for ~15 languages, line-accurate fallback for text files |
 | `embeddings.py` | Ollama / local-HuggingFace / HF Inference API embedding providers |
 | `summary.py` | Auto-generated codebase overview after indexing |
 | `graph.py` | Import-graph extraction (incl. Rust) + D3.js template rendering |
@@ -218,10 +222,12 @@ module owns one concern:
 
 1. **Clone or load** — `repo_parser.py` shallow-clones GitHub URLs (public
    only, max 50 MB) or walks a local directory directly from disk (no limit).
-2. **Parse** — supported files only (`.py`, `.js`, `.ts`, `.tsx`, `.jsx`,
-   `.css`, `.html`, `.md`, `.txt`, `.json`, `.yaml`, `.yml`, `.toml`, `.rs`),
-   skipping `.git`, `node_modules`, `__pycache__`, `venv`, build dirs, and
-   more.
+2. **Parse** — supported files only (`.py`, `.js`, `.mjs`, `.cjs`, `.ts`,
+   `.tsx`, `.jsx`, `.rs`, `.go`, `.java`, `.c`, `.h`, `.cpp`, `.cc`,
+   `.cxx`, `.hpp`, `.cs`, `.rb`, `.php`, `.swift`, `.kt`, `.kts`, `.sh`,
+   `.bash`, `.lua`, `.r`, `.dart`, `.scala`, `.css`, `.html`, `.md`,
+   `.txt`, `.json`, `.yaml`, `.yml`, `.toml`, `.sql`), skipping `.git`,
+   `node_modules`, `__pycache__`, `venv`, build dirs, and more.
 3. **Split** — `code_splitter.py` produces structural chunks.
 4. **Embed** — each chunk is embedded via the provider in
    [`embeddings.py`](rag/embeddings.py).
@@ -229,10 +235,9 @@ module owns one concern:
    against `manifest.json` and only re-embeds what changed.
 6. **Restore on startup** — `python server.py` calls `restore_index()`, which
    reads `index_meta.json` in `CHROMA_DIR` and rebuilds the retriever, chain,
-   and metadata from the previous run. For **local** sources, documents are
-   re-parsed from disk so the graph, file overlay, and Deep Analysis work
-   immediately; for GitHub sources, search and chat come back without
-   re-cloning (re-index to restore full graph/agent).
+   and metadata from the previous run. Local sources are re-parsed from disk;
+   GitHub clones are kept in `chroma_db/_clones/`, so graph, file overlay,
+   and Deep Analysis all restore without a re-index.
 
 ### Chat Pipeline (Quick Mode)
 
@@ -697,7 +702,9 @@ are JSON.
 | `POST` | `/api/index/cancel` | — | `{status}` |
 | `GET` | `/api/info` | — | `{provider, model, embedding, retrieval_k}` |
 | `POST` | `/api/search` | `{query, k}` | `{results: [{source, start_line, end_line, snippet}]}` |
+| `GET` | `/api/files` | — | `{files: [paths], repo}` — indexed file list for auto-linking |
 | `GET` | `/api/file` | `?path=` | `{source, total_lines, truncated, lines[]}` or `{error}` |
+| `POST` | `/api/open` | `{path, line_start, line_end}` | `{url}` (GitHub blob at the exact line), `{opened}` (local file via OS opener), or `{error}` |
 | `POST` | `/api/clear` | — | `{status}` |
 | `GET` | `/api/graph` | — | `{graph_html}` |
 | `POST` | `/api/export` | `{format_type, history}` | `{filename, content}` |
@@ -734,13 +741,14 @@ Each event is `data: {json}\n\n`:
 |---|---|---|
 | Vectors + chunks | `CHROMA_DIR/chroma.sqlite3` | ChromaDB persistent client |
 | Index manifest | `CHROMA_DIR/manifest.json` | `source → {hash, ids}` for incremental re-indexing |
-| Restore metadata | `CHROMA_DIR/index_meta.json` | repo name, overview, file tree, source — read at startup by `restore_index()` |
+| Restore metadata | `CHROMA_DIR/index_meta.json` | repo name, overview, file tree, source, clone dir — read at startup by `restore_index()` |
+| Git clones | `CHROMA_DIR/_clones/<repo>/` | shallow clones kept on disk so GitHub indexes restore fully across restarts |
 | Conversations | browser `localStorage` key `codebase-qa.session.v4` | per-browser sessions, survive server restarts |
 
 `python server.py` runs `restore_index()` at startup, so a recent index is
-usable immediately after a restart — search and chat come back first, and for
-**local** sources the graph/agent/file overlay too. Re-index (Index button) to
-fully restore a GitHub-sourced index.
+usable immediately after a restart — search, chat, graph, overlay, and agent
+all come back (local paths re-parse from disk; GitHub repos re-parse from the
+persisted clone). Re-index only when the source or chunker settings changed.
 
 ---
 
@@ -756,10 +764,14 @@ After the app starts, open http://localhost:7860 and run through this list:
    indicators, and an auto-generated summary in the console panel.
 3. 💬 **Ask "What does this project do?"** — expect a summary answer with
    `[file#Lstart-Lend]` references, plus clickable source chips under the
-   reply.
+   reply. Click a citation or an inline file link to open it in the overlay
+   at the exact line.
 4. 🕵️ **Switch to Deep Analysis** and ask *"Find the main entry point and
    trace how it works."* — the agent should search, read, and answer, with
    each tool step streamed live above the final answer.
+4b. 🔗 **Open a file externally** — in the overlay, hit **Open**: for a GitHub
+   repo it jumps to the blob at that exact line; for a local repo it opens
+   the file on your machine.
 5. 🕸️ **Open the Dependency Graph tab** — an interactive D3.js graph of the
    repo's files; filter by directory, hide tests, find a file, and click a
    node to Read or Ask about it.
@@ -788,11 +800,12 @@ make help              # list all targets
 ```
 
 > [!TIP]
-> **164 tests** across 13 modules, covering the splitter, parser, graph,
-> agent tools and JSON-text parser, chain, incremental indexing, persistence,
-> restore, the SSE streaming API, and full pipeline integration. CI
-> (`.github/workflows/ci.yml`) runs the same `pytest` + `ruff check` +
-> `ruff format` gates on every push — the badge at the top isn't lying. 🟢
+> **167 tests** across 13 modules, covering the splitter (incl. per-language
+> tree-sitter queries), parser, graph, agent tools and JSON-text parser,
+> chain, incremental indexing, persistence, restore, the SSE streaming API,
+> and full pipeline integration. CI (`.github/workflows/ci.yml`) runs the
+> same `pytest` + `ruff check` + `ruff format` gates on every push — the
+> badge at the top isn't lying. 🟢
 
 ---
 
@@ -878,10 +891,12 @@ current `requirements.txt` (these ship since the FastAPI migration).
 
 ### tree-sitter errors on Windows
 
-`tree-sitter-languages` may fail to install on Windows. The app still works:
-JS/TS files fall back to whole-file text chunks (split by the recursive
-splitter), and Python splitting uses the built-in `ast` module, which always
-works.
+`tree-sitter` / `tree-sitter-languages` are pinned to known-good versions
+(`tree-sitter==0.21.3`, `tree-sitter-languages==1.10.2`). If the grammars
+fail to load or a queries footnote breaks, the app still fully works: that
+language falls back to line-accurate text chunks (real line numbers kept),
+and Python splitting uses the built-in `ast` module, which never needs
+tree-sitter.
 
 ### Model re-downloads on every Docker run (HuggingFace mode)
 
@@ -915,7 +930,7 @@ codebase-qa/
 │   ├── __init__.py       #   public exports
 │   ├── chain.py          #   RAG chain, LLM init (3 providers), prompt template
 │   ├── repo_parser.py    #   clone + parse GitHub repos, local paths, URL validation
-│   ├── code_splitter.py  #   AST-aware Python + tree-sitter JS/TS splitting + text fallback
+│   ├── code_splitter.py  #   AST Python + tree-sitter (~15 langs) + line-accurate text fallback
 │   ├── embeddings.py     #   Ollama / local-HF / HF-API embedding providers
 │   ├── vectorstore.py    #   ChromaDB: incremental indexing, retrieve, search, clear
 │   ├── summary.py        #   auto-generated codebase summary
@@ -928,7 +943,7 @@ codebase-qa/
 │   ├── index.html        #   app shell: sidebar, chat, search, graph, overlay
 │   ├── app.js            #   SSE streaming, sessions, search, graph embedding, shortcuts
 │   └── style.css         #   dark OLED theme
-├── tests/                # 13 test modules (unit + integration) — 164 tests
+├── tests/                # 13 test modules (unit + integration) — 167 tests
 ├── .github/workflows/
 │   └── ci.yml            # pytest + ruff lint/format on push/PR
 ├── Makefile              # install / dev / test / lint / format
@@ -953,9 +968,11 @@ codebase-qa/
 - **Deep Analysis needs a tool-calling provider** — Ollama or
   `huggingface_api`; the local `huggingface` pipeline supports Quick mode
   only.
-- **Restore is best-effort** — after a restart, GitHub-sourced indexes come
-  back for search/chat immediately, but the graph and Deep Analysis need a
-  re-index to fully rebuild in memory. Local-sourced indexes restore fully.
+- **Restore is full for both source types** — restarts re-parse local paths
+  and the persisted `chroma_db/_clones/` for GitHub, so graph, overlay, and
+  agent come back too. Clearing `chroma_db` (or changing `CHUNK_SIZE` /
+  `CHUNK_OVERLAP` / the chunker) makes the next start degrade to a
+  search-only index until you re-index.
 - **`huggingface_api` is not offline** — your questions and retrieved chunks
   are sent to HuggingFace. Use `ollama` or local `huggingface` for full
   privacy.
