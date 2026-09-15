@@ -3,6 +3,8 @@ import json
 import logging
 import os
 import re
+import subprocess
+import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -139,7 +141,7 @@ def _meta_path() -> Path:
     return Path(os.getenv("CHROMA_DIR", "./chroma_db")) / "index_meta.json"
 
 
-def _save_meta(source: str) -> None:
+def _save_meta(source: str, clone_dir: str | None = None) -> None:
     if not (Path(os.getenv("CHROMA_DIR", "./chroma_db")) / "chroma.sqlite3").exists():
         return
     try:
@@ -150,6 +152,8 @@ def _save_meta(source: str) -> None:
             "file_tree": state.file_tree,
             "files": state.files or [],
         }
+        if clone_dir:
+            meta["clone_dir"] = clone_dir
         _meta_path().parent.mkdir(parents=True, exist_ok=True)
         _meta_path().write_text(json.dumps(meta))
     except Exception as e:
@@ -182,6 +186,13 @@ def restore_index() -> bool:
         if local.is_dir():
             docs, _stats = parse_local(str(local))
             state.documents = docs
+        else:
+            clone_dir = meta.get("clone_dir")
+            if clone_dir:
+                repo_path = Path(clone_dir).expanduser() / str(local.name.replace(".git", ""))
+                if repo_path.is_dir():
+                    docs, _stats = parse_local(str(repo_path))
+                    state.documents = docs
         state.embeddings = get_embeddings()
         state.retriever = get_retriever(
             k=int(os.getenv("RETRIEVAL_K", "4")),
@@ -219,12 +230,16 @@ def index_repo(source: str) -> tuple[str, str]:
 
     index_progress["phase"] = "Reading repository"
     index_progress["cancel"] = False
+    clone_dir: str | None = None
     try:
         if Path(source).expanduser().is_dir():
             docs, stats = parse_local(source)
         else:
             validate_github_url(source)
-            docs, stats = clone_and_parse(source)
+            clone_base = Path(os.getenv("CHROMA_DIR", "./chroma_db")) / "_clones"
+            clone_base.mkdir(parents=True, exist_ok=True)
+            clone_dir = str(clone_base)
+            docs, stats = clone_and_parse(source, clone_to=clone_dir)
     except ValueError as e:
         return str(e), ""
 
@@ -297,7 +312,7 @@ def index_repo(source: str) -> tuple[str, str]:
 
         repo_name = docs[0].metadata["repo"]
         state.indexed_repo = repo_name
-        _save_meta(source)
+        _save_meta(source, clone_dir)
 
         lang_str = ", ".join(
             f"{ext}: {count}" for ext, count in sorted(stats["files_by_ext"].items(), key=lambda x: -x[1])
@@ -399,11 +414,75 @@ def read_file(path: str, max_lines: int = 4000) -> dict:
             truncated = total > max_lines
             return {
                 "source": doc.metadata.get("source", norm),
+                "repo_url": doc.metadata.get("repo_url", ""),
+                "repo": doc.metadata.get("repo", ""),
                 "total_lines": total,
                 "truncated": truncated,
                 "lines": lines[:max_lines],
             }
     return {"error": f"File not found: {path}"}
+
+
+def open_external(path: str, line_start: int | None = None, line_end: int | None = None) -> dict:
+    """Open a source file outside the app: GitHub blob URL for git repos, the
+    local file via xdg-open (server-side) for local paths."""
+    if not (path or "").strip():
+        return {"error": "No file path."}
+    norm = path.replace("\\", "/").lstrip("/")
+    repo_url = ""
+    if state.documents:
+        for doc in state.documents:
+            if doc.metadata.get("source", "").replace("\\", "/").lstrip("/") == norm:
+                repo_url = doc.metadata.get("repo_url", "")
+                break
+    if not repo_url:
+        repo_url = _meta_source()
+
+    if repo_url.startswith(("http://", "https://")):
+        branch = _default_branch(repo_url)
+        anchor = ""
+        if line_start:
+            anchor = f"#L{line_start}" + (f"-L{line_end}" if line_end and line_end > line_start else "")
+        url = f"{repo_url.rstrip('/')}/blob/{urllib.parse.quote(branch)}/{urllib.parse.quote(norm)}" + anchor
+        return {"url": url}
+
+    local = Path(repo_url).expanduser() if repo_url else None
+    if local and local.is_dir():
+        target = local / norm
+        if not target.is_file():
+            return {"error": f"File not found: {target}"}
+        try:
+            subprocess.Popen(["xdg-open", str(target)], start_new_session=True)
+            return {"opened": str(target)}
+        except OSError as e:
+            return {"error": f"Failed to open file: {e}"}
+    return {"error": "No index to open from."}
+
+
+def _meta_source() -> str:
+    try:
+        return json.loads(_meta_path().read_text(encoding="utf-8")).get("source", "")
+    except Exception:
+        return ""
+
+
+def _default_branch(repo_url: str) -> str:
+    import git
+
+    try:
+        meta_clone = json.loads(_meta_path().read_text(encoding="utf-8")).get("clone_dir", "")
+    except Exception:
+        meta_clone = ""
+    repo_name = urllib.parse.urlparse(repo_url).path.rstrip("/").split("/")[-1].replace(".git", "")
+    candidates = [Path(meta_clone).expanduser() / repo_name] if meta_clone else []
+    candidates += [Path(os.getenv("CHROMA_DIR", "./chroma_db")) / "_clones" / repo_name]
+    for repo_path in candidates:
+        try:
+            if repo_path.is_dir() and (repo_path / ".git").exists():
+                return git.Repo(str(repo_path)).active_branch.name
+        except Exception:
+            continue
+    return "main"
 
 
 def classify_agent_chunk(chunk: dict) -> tuple[str, str] | None:

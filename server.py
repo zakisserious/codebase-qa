@@ -18,6 +18,7 @@ from app import (
     do_export,
     index_progress,
     index_repo,
+    open_external,
     read_file,
     restore_index,
     search_documents,
@@ -74,6 +75,12 @@ class ExportBody(BaseModel):
 class SearchBody(BaseModel):
     query: str = ""
     k: int = 10
+
+
+class OpenBody(BaseModel):
+    path: str = ""
+    line_start: int | None = None
+    line_end: int | None = None
 
 
 def _sse(obj: dict) -> str:
@@ -181,6 +188,16 @@ def api_search(body: SearchBody):
         return {"results": []}
     results = search_documents(body.query, k=max(1, min(50, body.k)), embedding_model=state.embeddings)
     return {"results": results}
+
+
+@server.get("/api/files")
+def api_files():
+    return {"files": state.files or [], "repo": state.indexed_repo}
+
+
+@server.post("/api/open")
+def api_open(body: OpenBody):
+    return open_external(body.path, body.line_start, body.line_end)
 
 
 @server.get("/api/file")

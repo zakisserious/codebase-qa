@@ -7,6 +7,7 @@ from contextlib import suppress
 from pathlib import Path
 
 import chromadb
+from chromadb.api.client import SharedSystemClient
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
@@ -199,3 +200,6 @@ def clear_store() -> None:
     if os.path.exists(CHROMA_DIR):
         shutil.rmtree(CHROMA_DIR, ignore_errors=True)
         logger.info("Cleared ChromaDB store at %s", CHROMA_DIR)
+    # The chromadb client caches a System per path with open sqlite handles;
+    # without this the next index reuses handles to a deleted database.
+    SharedSystemClient.clear_system_cache()

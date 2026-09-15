@@ -251,7 +251,7 @@ class TestIndexRepo:
     def test_github_url_branch(self, monkeypatch):
         self._stub_pipeline(monkeypatch)
         calls: list = []
-        monkeypatch.setattr(app, "clone_and_parse", lambda url: calls.append(url) or ([self._FakeDoc()], self._stats()))
+        monkeypatch.setattr(app, "clone_and_parse", lambda url, clone_to=None: calls.append(url) or ([self._FakeDoc()], self._stats()))
 
         status, graph = app.index_repo("https://github.com/user/myrepo")
 
