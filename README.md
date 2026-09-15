@@ -322,6 +322,10 @@ Conversations persist in the browser's `localStorage`:
 | Option D | [Docker](https://docs.docker.com/get-docker/) | containerized run |
 
 > [!TIP]
+> **No Python 3.11?** `make install` auto-detects it — if it's missing it uses
+> `uv` to fetch 3.11 on the spot (or, without `uv`, prints one-line install
+> instructions and waits). It targets 3.11 to match CI exactly.
+>
 > **Windows users:** `make` isn't bundled with Windows. Use
 > `choco install make` or `scoop install make` — or just run the raw commands
 > shown in each option. The Makefile is a convenience, never a requirement.

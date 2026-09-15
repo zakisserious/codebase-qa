@@ -1,14 +1,37 @@
-PYTHON ?= python3.11
+PYTHON ?=
 
 .PHONY: install test lint format dev clean help
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
-install:  ## Install dependencies in venv
-	@test "$$($(PYTHON) -c 'import sys; print("%d.%d" % sys.version_info[:2])')" = "3.11" \
-		|| (echo "error: $(PYTHON) is $$($(PYTHON) --version 2>&1) — need Python 3.11; run make install PYTHON=/path/to/python3.11" && exit 1)
-	$(PYTHON) -m venv .venv
+install:  ## Install dependencies in venv (auto-detects/fetches Python 3.11)
+	@PY="$(PYTHON)"; \
+	if [ -z "$$PY" ]; then \
+		for c in .venv/bin/python python3.11 python3 python; do \
+			if command -v "$$c" >/dev/null 2>&1 && [ "$$($$c -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null)" = "3.11" ]; then \
+				PY="$$c"; break; \
+			fi; \
+		done; \
+	fi; \
+	if [ -z "$$PY" ] && command -v uv >/dev/null 2>&1; then \
+		echo "no Python 3.11 found — fetching it via uv"; \
+		uv venv --python 3.11 .venv; \
+		.venv/bin/pip install -r requirements.txt; \
+		exit 0; \
+	fi; \
+	if [ -z "$$PY" ]; then \
+		echo "no Python 3.11 found."; \
+		echo "Install it via uv (fast, no sudo), then re-run: make install"; \
+		echo '  curl -LsSf https://astral.sh/uv/install.sh | sh'; \
+		echo "  uv python install 3.11"; \
+		echo "Or with your package manager:"; \
+		echo "  Debian/Ubuntu: sudo apt install python3.11 python3.11-venv"; \
+		echo "  macOS:         brew install python@3.11"; \
+		exit 1; \
+	fi; \
+	echo "using $$PY ($$($$PY --version))"; \
+	$$PY -m venv .venv; \
 	.venv/bin/pip install -r requirements.txt
 
 test:  ## Run all tests
