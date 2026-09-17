@@ -71,6 +71,10 @@ class TestFormatDocs:
 
 
 class TestSystemPrompt:
+    def test_identifies_as_codebase_qa(self):
+        assert "CodeBase QA" in SYSTEM_PROMPT
+        assert "Never identify yourself as a specific model" in SYSTEM_PROMPT
+
     def test_no_citation_example_line(self):
         assert "Example: [auth.py#L12-L45]" not in SYSTEM_PROMPT
 
