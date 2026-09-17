@@ -54,7 +54,7 @@ body{font-family:"Geist",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans
 </style>
 </head>
 <body>
-<div id="stats"><h3>Dependency Graph</h3><div class="stat">Files: <b></b> &middot; Deps: <b></b></div><div class="stat top"></div><div class="stat orphan"></div><div class="stat cycles"></div><div class="focus"></div></div>
+<div id="stats"><div class="stat">Files: <b></b> &middot; Deps: <b></b></div><div class="stat top"></div><div class="stat orphan"></div><div class="stat cycles"></div><div class="focus"></div></div>
 <div id="controls"><input id="find" placeholder="find file..." spellcheck="false"><button id="layoutMode" class="cbtn">Force</button><button id="hideTests" class="cbtn" title="Hide test files">Hide tests</button><select id="dirFilter" class="cbtn"><option value="__all__">All directories</option></select></div>
 <div id="legend"></div>
 <div id="nodeactions"><span class="napath" id="napath"></span><button id="naRead" type="button">Read file</button><button id="naAsk" type="button">Ask about it</button></div>
@@ -64,7 +64,7 @@ body{font-family:"Geist",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans
 <script src="https://d3js.org/d3.v7.min.js"></script>
 <script>
 const data=__GRAPH_DATA__;
-const colors={python:"#5b7ea6",javascript:"#c2a95c",rust:"#b0605c",test:"#FF984D",docs:"#6fa573",config:"#6b7280",other:"#4b5563"};
+const colors={python:"#6b8fc2",javascript:"#d2b05e",rust:"#cf7f74",test:"#a78bdc",docs:"#79b07e",config:"#7b8494",other:"#59606d"};
 const accent="#FF984D", edge="#333a49", downstream="#FF984D", upstream="#7ea2cf";
 const w=window.innerWidth,h=window.innerHeight;
 const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -73,9 +73,10 @@ const allNodes=data.nodes, allLinks=data.links;
 let nodes=allNodes, links=allLinks;
 let hideTests=false, dirFilter="__all__";
 
-const pathTop=n=>{const s=(n.id||n).replace("\\","/").split("/");return s.length>1&&s[0]?s[0]:"root"};
-const isTest=n=>/(\/|^|_)(test|tests|__tests__)(\/|_|\.|-|$)/i.test(n.id)||/\.(spec|test)\.(py|js|ts|jsx|tsx)$/i.test(n.id)||/tests?\//.test(n.id.replace("\\","/"));
-const visible=n=>!(hideTests&&isTest(n))&&(dirFilter==="__all__"||pathTop(n)===dirFilter||n.id.replace("\\","/")===dirFilter);
+const idOf=n=>typeof n==="string"?n:(n&&n.id)||"";
+const pathTop=n=>{const s=idOf(n).replace("\\","/").split("/");return s.length>1&&s[0]?s[0]:"root"};
+const isTest=n=>{const id=idOf(n);return /(\/|^|_)(test|tests|__tests__)(\/|_|\.|-|$)/i.test(id)||/\.(spec|test)\.(py|js|ts|jsx|tsx)$/i.test(id)||/tests?\//.test(id.replace("\\","/"))};
+const visible=n=>{const id=idOf(n);return !(hideTests&&isTest(id))&&(dirFilter==="__all__"||pathTop(id)===dirFilter||id.replace("\\","/")===dirFilter)};
 
 /* ---- graph index: out / inc / adj ---- */
 function mkSets(ns,ls){
@@ -125,7 +126,7 @@ function rings(ns,ls,children,indeg){
 }
 
 /* ---- directory cluster anchors ---- */
-const clusterKey=n=>{const p=n.id.replace("\\","/").split("/");return p.length>2?p.slice(0,-1).join("/"):p[0]||"root"};
+const clusterKey=n=>{const p=idOf(n).replace("\\","/").split("/");return p.length>2?p.slice(0,-1).join("/"):p[0]||"root"};
 function anchors(ns){
   const list=[...new Set(ns.map(clusterKey))];
   const res=new Map();
@@ -162,41 +163,62 @@ tops.forEach(t=>{const o=document.createElement("option");o.value=t;o.textConten
 /* ---- svg & simulation ---- */
 const svg=d3.select("#graph").append("svg").attr("width",w).attr("height",h);
 const g=svg.append("g");
-svg.append("rect").attr("width",w).attr("height",h).attr("fill","#0a0a0f").style("cursor","grab").lower();
+svg.append("rect").attr("width",w).attr("height",h).attr("fill","url(#bg)").style("cursor","grab").lower();
 const defs=svg.append("defs");
+const bgGrad=defs.append("radialGradient").attr("id","bg").attr("cx","50%").attr("cy","45%").attr("r","75%");
+bgGrad.append("stop").attr("offset","0%").attr("stop-color","#10141d");
+bgGrad.append("stop").attr("offset","100%").attr("stop-color","#0a0a0f");
 defs.append("marker").attr("id","arrow").attr("viewBox","0 -5 10 10").attr("refX",22).attr("refY",0).attr("markerWidth",6).attr("markerHeight",6).attr("orient","auto").attr("fill","#4a5462").append("path").attr("d","M0,-5L10,0L0,5");
 
 let sim=d3.forceSimulation(nodes);
+let lastPlace=0;
+function placeTick(){const t=performance.now();if(t-lastPlace<24)return;lastPlace=t;place()}
+function placeNow(){lastPlace=0;place()}
 function rebuildSim(){
   sim.stop();
   sim=d3.forceSimulation(nodes)
-    .force("link",d3.forceLink(links).id(d=>d.id).distance(120).strength(.3))
-    .force("charge",d3.forceManyBody().strength(-350))
+    .alphaDecay(0.05)
+    .force("link",d3.forceLink(links).id(d=>d.id).distance(85).strength(.45))
     .force("center",d3.forceCenter(w/2,h/2))
-    .force("collision",d3.forceCollide().radius(30))
-    .force("clx",d3.forceX(n=>allAnchors.get(clusterKey(n))?.x??w/2).strength(0.10))
-    .force("cly",d3.forceY(n=>allAnchors.get(clusterKey(n))?.y??h/2).strength(0.10))
-    .on("tick",place);
+    .force("gravx",d3.forceX(w/2).strength(0.06))
+    .force("gravy",d3.forceY(h/2).strength(0.06));
+  if(!isBig()){
+    sim.force("charge",d3.forceManyBody().strength(-100));
+    sim.force("collision",d3.forceCollide().radius(d=>r(d)+2));
+  }
+  sim.on("tick",placeTick)
+    .on("end",placeNow);
+}
+function settleForce(){
+  sim.alpha(.6);
+  for(let i=0;i<140&&sim.alpha()>sim.alphaMin();i++)sim.tick();
+  sim.stop();
+  place();
 }
 
 let hovered=null,pinned=null,zoomK=1,hoverShift=false,radialMode=true;
 
 /* ---- drawing ---- */
 function r(n){return Math.max(6,Math.min(14,Math.sqrt(n.lines/12)))}
+function isBig(){return nodes.length>600}
 const ENTRY_RE=/^(main|__main__|index)(\.(py|rs|js|ts|jsx|tsx))?$/i;
 const drag=d3.drag()
-  .on("start",e=>{e.sourceEvent.stopPropagation();if(!e.active&&!radialMode)sim.alphaTarget(.3).restart();e.subject._sx=e.subject.x;e.subject._sy=e.subject.y})
-  .on("drag",e=>{e.subject.fx=e.x;e.subject.fy=e.y;if(radialMode){e.subject.x=e.x;e.subject.y=e.y;place();}})
-  .on("end",e=>{sim.alphaTarget(0);if(!radialMode){e.subject.fx=null;e.subject.fy=null;}});
+  .on("start",e=>{e.sourceEvent.stopPropagation();if(!e.active&&!radialMode&&!isBig())sim.alphaTarget(.3).restart();e.subject._sx=e.subject.x;e.subject._sy=e.subject.y})
+  .on("drag",e=>{e.subject.fx=e.x;e.subject.fy=e.y;if(radialMode||isBig()){e.subject.x=e.x;e.subject.y=e.y;place();}})
+  .on("end",e=>{if(!radialMode){if(isBig()){e.subject.fx=null;settleForce();}else{sim.alphaTarget(0);e.subject.fx=null;e.subject.fy=null;}}});
 
+const ringLayer=g.append("g");
+const clusterLayer=g.append("g").attr("id","clusters");
 const linkSel=g.append("g").attr("id","links");
 const nodeSel=g.append("g").attr("id","labels");
 
+const LINK_OP=.38;
 function draw(){
   linkSel.selectAll("line")
     .data(links, l=>srcOf(l)+"\u0000"+tgtOf(l))
     .join("line")
-    .attr("stroke",edge).attr("stroke-width",1.2).attr("marker-end","url(#arrow)").attr("opacity",0.55);
+    .each(function(l){l._line=this;})
+    .attr("stroke",edge).attr("stroke-width",1).attr("marker-end","url(#arrow)").attr("opacity",LINK_OP);
 
   const grp=nodeSel.selectAll("g")
     .data(nodes,d=>d.id)
@@ -211,12 +233,17 @@ function draw(){
       exit=>exit.remove()
     );
   grp.each(function(d){
+    d._elt=this;
+    d._base=this.querySelector("circle.base");
+    d._orph=this.querySelector("circle.orph");
+    d._ent=this.querySelector("circle.ent");
+    d._txt=this.querySelector("text.node-label");
     const el=d3.select(this);
     el.select("circle.base")
       .attr("r",r(d))
       .attr("fill",colors[d.type]||colors.other)
-      .attr("fill-opacity",0.72)
-      .attr("stroke","#0a0a0f").attr("stroke-width",1.2);
+      .attr("fill-opacity",0.85)
+      .attr("stroke","rgba(255,255,255,.30)").attr("stroke-width",1);
     el.select("circle.orph")
       .classed("o",!(gsets.out.get(d.id)?.size||gsets.inc.get(d.id)?.size))
       .attr("r",r(d)+3)
@@ -230,7 +257,7 @@ function draw(){
     if(!el.select("circle.ent").classed("e"))el.select("circle.ent").attr("r",0);
     el.select("text.node-label").text(d.name)
       .attr("dx",r(d)+10).attr("dy",4)
-      .attr("font-size",11).attr("font-family","JetBrains Mono,ui-monospace,Menlo,monospace").attr("fill","#8a8f98");
+      .attr("font-size",12).attr("font-family","JetBrains Mono,ui-monospace,Menlo,monospace").attr("fill","#9aa2af");
   });
   bindEvents();
   if(hovered!==null)setHighlight(pinned||hovered,hoverShift);
@@ -246,8 +273,8 @@ function bindEvents(){
 }
 
 function place(){
-  linkSel.selectAll("line").attr("x1",d=>d.source.x).attr("y1",d=>d.source.y).attr("x2",d=>d.target.x).attr("y2",d=>d.target.y);
-  nodeSel.selectAll("g").attr("transform",d=>"translate("+d.x+","+d.y+")");
+  for(let i=0;i<links.length;i++){const el=links[i]._line;if(el){el.setAttribute("x1",links[i].source.x);el.setAttribute("y1",links[i].source.y);el.setAttribute("x2",links[i].target.x);el.setAttribute("y2",links[i].target.y);}}
+  for(let i=0;i<nodes.length;i++){const n=nodes[i];if(n._elt)n._elt.setAttribute("transform","translate("+n.x+","+n.y+")");}
 }
 
 /* current graph computation on demand */
@@ -276,55 +303,43 @@ function ringFor(n){return cur.settled.has(n.id)?cur.dist[n.id]:cur.maxD+1}
 function setHighlight(id,traceAll){
   hovered=id;
   if(!id){
-    nodeSel.selectAll("g").attr("opacity",1);
-    linkSel.selectAll("line").attr("opacity",0.55).attr("stroke",edge).attr("stroke-width",1.2);
-    nodeSel.selectAll("circle.base").attr("stroke","#0a0a0f").attr("stroke-width",1.2).attr("fill-opacity",0.72);
+    for(let i=0;i<nodes.length;i++){const n=nodes[i];if(n._elt)n._elt.style.opacity=1;if(n._base){n._base.setAttribute("stroke","rgba(255,255,255,.30)");n._base.setAttribute("stroke-width","1");n._base.setAttribute("fill-opacity","0.85");}}
+    for(let i=0;i<links.length;i++){const el=links[i]._line;if(el){el.style.opacity=LINK_OP;el.setAttribute("stroke",edge);el.setAttribute("stroke-width","1");}}
     return;
   }
-  const tr=traceAll?trace(id):null;
+  const tr=traceAll?trace(id):null,down=tr&&tr.down,up=tr&&tr.up;
   const nb=cur.adj.get(id);
   const inScc=traceAll&&onCycle(id);
-  nodeSel.selectAll("g").attr("opacity",d=>{
-    if(d.id===id)return 1;
-    if(tr)return (tr.down.has(d.id)||tr.up.has(d.id)|| (inScc&&onCycle(d.id)))?0.85:0.12;
-    return (nb.has(d.id))?1:0.2;
-  });
-  linkSel.selectAll("line").attr("opacity",l=>{
-    const s=srcOf(l),t=tgtOf(l);
-    const sId=s===id;
-    if(!traceAll)return (sId||t===id)?1:0.12;
-    if(sId||t===id)return 0.9;
-    if((tr.down.has(s)&&tr.down.has(t))||(tr.up.has(s)&&tr.up.has(t))||(inScc&&onCycle(s)&&onCycle(t)))return 0.7;
-    return 0.06;
-  }).attr("stroke",l=>{
-    const s=srcOf(l),t=tgtOf(l);
-    if(!traceAll)return (s===id||t===id)?accent:edge;
-    if((tr.down.has(s)&&tr.down.has(t))||(inScc&&onCycle(s)&&onCycle(t)))return downstream;
-    if((tr.up.has(s)&&tr.up.has(t)))return upstream;
-    if(s===id||t===id)return accent;
-    return edge;
-  }).attr("stroke-width",l=>{
-    const s=srcOf(l),t=tgtOf(l);
-    if(!traceAll)return (s===id||t===id)?2.4:1.2;
-    if(s===id||t===id)return 2.6;
-    return 1.2;
-  });
-  nodeSel.selectAll("circle.base")
-    .attr("stroke",d=>{
-      if(d.id===id)return accent;
-      if(inScc&&onCycle(d.id))return accent;
-      return "#0a0a0f";
-    })
-    .attr("stroke-width",d=>{
-      if(d.id===id)return 2.5;
-      if(inScc&&onCycle(d.id))return 1.8;
-      return 1.2;
-    })
-    .attr("fill-opacity",d=>{
-      if(d.id===id)return 1;
-      if(inScc&&onCycle(d.id))return 1;
-      return 0.72;
-    });
+  for(let i=0;i<nodes.length;i++){
+    const n=nodes[i];
+    if(!n._elt)continue;
+    let op=1;
+    if(n.id!==id&&down){
+      op=(down.has(n.id)||up.has(n.id)||(inScc&&onCycle(n.id)))?0.85:0.12;
+    }else if(n.id!==id){
+      op=(nb.has(n.id))?1:0.2;
+    }
+    n._elt.style.opacity=op;
+    if(n._base){
+      if(n.id===id||(inScc&&onCycle(n.id))){
+        n._base.setAttribute("stroke",accent);n._base.setAttribute("stroke-width",n.id===id?"2.5":"1.8");n._base.setAttribute("fill-opacity","1");
+      }else{
+        n._base.setAttribute("stroke","rgba(255,255,255,.30)");n._base.setAttribute("stroke-width","1");n._base.setAttribute("fill-opacity","0.85");
+      }
+    }
+  }
+  for(let i=0;i<links.length;i++){
+    const el=links[i]._line;
+    if(!el)continue;
+    const s=srcOf(links[i]),t=tgtOf(links[i]),isInc=(s===id||t===id);
+    let op,st,wd;
+    if(!traceAll){op=isInc?1:0.12;st=isInc?accent:edge;wd=isInc?"2.4":"1";}
+    else if(isInc){op=0.9;st=accent;wd="2.6";}
+    else if((down.has(s)&&down.has(t))||(inScc&&onCycle(s)&&onCycle(t))){op=0.7;st=downstream;wd="1.2";}
+    else if(up.has(s)&&up.has(t)){op=0.7;st=upstream;wd="1.2";}
+    else{op=0.06;st=edge;wd="1";}
+    el.style.opacity=op;el.setAttribute("stroke",st);el.setAttribute("stroke-width",wd);
+  }
 }
 
 /* ---- tooltip ---- */
@@ -404,8 +419,8 @@ findEl.addEventListener("input",()=>{
   const q=findEl.value.trim().toLowerCase();
   if(!q){setHighlight(pinned,hoverShift);return;}
   const m=new Set(nodes.filter(n=>n.id.toLowerCase().includes(q)||n.name.toLowerCase().includes(q)).map(n=>n.id));
-  nodeSel.selectAll("g").attr("opacity",d=>m.has(d.id)?1:0.1);
-  linkSel.selectAll("line").attr("opacity",l=>(m.has(srcOf(l))&&m.has(tgtOf(l)))?0.5:0.05);
+  for(let i=0;i<nodes.length;i++){const n=nodes[i];if(n._elt)n._elt.style.opacity=m.has(n.id)?1:0.1;}
+  for(let i=0;i<links.length;i++){const el=links[i]._line;if(el)el.style.opacity=(m.has(srcOf(links[i]))&&m.has(tgtOf(links[i])))?0.5:0.05;}
 });
 findEl.addEventListener("keydown",e=>{
   if(e.key==="Enter"){
@@ -430,7 +445,17 @@ findEl.addEventListener("keydown",e=>{
 
 /* ---- radial (traversal) layout ---- */
 const RING_BASE=85,RING_STEP=95;
-const ringR=rk=>{let a=RING_BASE;for(let i=1;i<=rk;i++)a+=Math.max(32,RING_STEP-i*8);return a};
+const _ringRaw=rk=>{let a=RING_BASE;for(let i=1;i<=rk;i++)a+=Math.max(32,RING_STEP-i*8);return a};
+let ringScale=1;
+function fitRingScale(){
+  ringScale=1;
+  const m=cur.maxD;
+  if(m<=0)return;
+  const avail=Math.min(w,h)/2-40;
+  const maxRad=_ringRaw(m);
+  if(maxRad>avail)ringScale=avail/maxRad;
+}
+const ringR=rk=>_ringRaw(rk)*ringScale;
 function layoutRadial(){
   const buckets={};
   nodes.forEach(n=>{
@@ -451,18 +476,55 @@ function layoutRadial(){
   });
   place();
 }
+function renderRings(){
+  ringLayer.selectAll("*").remove();
+  if(!radialMode)return;
+  const levels=[...new Set(nodes.map(ringFor))].sort((a,b)=>a-b);
+  if(!levels.length)return;
+  ringLayer.selectAll("circle.depth")
+    .data(levels).join("circle")
+    .attr("class","depth")
+    .attr("cx",w/2).attr("cy",h/2)
+    .attr("r",ringR)
+    .attr("fill","none")
+    .attr("stroke","rgba(255,255,255,.14)")
+    .attr("stroke-width",1)
+    .attr("stroke-dasharray","1 6")
+    .style("opacity",d=>Math.max(.08,1-d*0.22));
+}
+function renderClusters(){
+  clusterLayer.selectAll("*").remove();
+  if(!radialMode)return;
+  const clusters=[...new Set(nodes.map(clusterKey))];
+  clusterLayer.selectAll("text.cluster")
+    .data(clusters).join("text")
+    .attr("class","cluster")
+    .attr("x",k=>allAnchors.get(k).x).attr("y",k=>allAnchors.get(k).y+3)
+    .attr("text-anchor","middle")
+    .attr("font-size",11)
+    .attr("font-family","JetBrains Mono,ui-monospace,Menlo,monospace")
+    .attr("fill","#6b7280")
+    .style("opacity",.45)
+    .text(k=>k==="root"?"ROOT":k);
+}
 function setRadial(on){
   radialMode=on;
   const b=d3.select("#layoutMode");
   b.text(on?"Force":"Radial").classed("active",on);
   if(on){
     computeCurrent();
+    fitRingScale();
     layoutRadial();
+    renderRings();
+    renderClusters();
     sim.stop();
     place();
   }else{
+    renderRings();
+    renderClusters();
     nodes.forEach(n=>{n.fx=null;n.fy=null});
-    sim.alpha(.6).restart();
+    if(isBig()){settleForce();}
+    else{sim.alpha(.6).restart();}
     place();
   }
 }
@@ -490,10 +552,11 @@ function applyFilter(){
   updateStats();
   const noEl=document.getElementById("none");
   noEl.style.display=(!radialMode&&links.length===0)?"flex":"none";
-  if(radialMode)setRadial(true);
+  if(radialMode){draw();setRadial(true);}
   else{
     draw();
-    sim.alpha(.5).restart();
+    if(isBig())settleForce();
+    else sim.alpha(.5).restart();
   }
   if(reduce){
     sim.stop().alpha(0);

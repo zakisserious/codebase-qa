@@ -70,30 +70,6 @@ textarea {
   color: inherit;
 }
 
-/* Ambient drift — single fixed warm blob, never on scrolling nodes */
-body::before {
-  content: "";
-  position: fixed;
-  top: -30%;
-  left: -20%;
-  width: 70vw;
-  height: 90vh;
-  border-radius: 50%;
-  background: radial-gradient(closest-side, rgba(255, 152, 77, 0.07), transparent 70%);
-  pointer-events: none;
-  z-index: 0;
-  animation: cb-drift 26s ease-in-out infinite alternate;
-}
-
-@keyframes cb-drift {
-  from {
-    transform: translate(0, 0) scale(1);
-  }
-  to {
-    transform: translate(18vw, 14vh) scale(1.15);
-  }
-}
-
 /* ------------------------------------------------------------
    Header
    ------------------------------------------------------------ */
@@ -892,31 +868,6 @@ kbd {
   border: 1px solid var(--cb-line);
   border-radius: var(--cb-r-lg);
   overflow: hidden;
-}
-
-.winbar {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 9px 12px;
-  border-bottom: 1px solid var(--cb-line);
-  background: var(--cb-surface);
-}
-
-.winbar .dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: #3a3d45;
-}
-
-.winbar .wintitle {
-  margin-left: 8px;
-  font-family: var(--cb-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.05em;
-  color: var(--cb-faint);
 }
 
 #cb-graph-body {

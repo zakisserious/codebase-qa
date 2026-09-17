@@ -953,7 +953,7 @@ function mountGraph() {
 async function showGraph() {
   if (!state.graphHtml) {
     els.graphBody.innerHTML =
-      '<p class="hint">Index a repository to view its dependency graph.</p>';
+      '<p class="hint">Index a repository to see how files connect.</p>';
     try {
       const res = await fetch("/api/graph");
       const data = await res.json();
