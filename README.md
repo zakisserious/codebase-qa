@@ -128,7 +128,7 @@ flowchart LR
 **Indexing — one time per repo:**
 
 1. **Source** — a GitHub URL is shallow-cloned into a temp directory (public
-   HTTPS GitHub URLs only, repos up to 50 MB), or a local directory is walked
+   HTTPS GitHub URLs only, repos up to 150 MB), or a local directory is walked
    straight from disk (no size limit).
 2. **Parse** — supported file types are read, skipped directories ignored,
    and per-file stats collected (line count, language, README / tests / CI
@@ -221,7 +221,7 @@ module owns one concern:
 ### Indexing Pipeline
 
 1. **Clone or load** — `repo_parser.py` shallow-clones GitHub URLs (public
-   only, max 50 MB) or walks a local directory directly from disk (no limit).
+   only, max 150 MB) or walks a local directory directly from disk (no limit).
 2. **Parse** — supported files only (`.py`, `.js`, `.mjs`, `.cjs`, `.ts`,
    `.tsx`, `.jsx`, `.rs`, `.go`, `.java`, `.c`, `.h`, `.cpp`, `.cc`,
    `.cxx`, `.hpp`, `.cs`, `.rb`, `.php`, `.swift`, `.kt`, `.kts`, `.sh`,
@@ -759,7 +759,7 @@ After the app starts, open http://localhost:7860 and run through this list:
 1. 📥 **Paste a GitHub URL** — try a small public repo, e.g.
    `https://github.com/pallets/click` or `https://github.com/pallets/flask`.
    Or paste a **local folder path** (e.g. `C:\my-project`) — it's indexed
-   straight from disk, no clone, and without the 50 MB limit.
+   straight from disk, no clone, and without the 150 MB limit.
 2. 🗂️ **Click Index** — you'll see file counts, a language breakdown, health
    indicators, and an auto-generated summary in the console panel.
 3. 💬 **Ask "What does this project do?"** — expect a summary answer with
@@ -847,7 +847,7 @@ Your GPU can't fit the model. Either:
 2. Force CPU: run `OLLAMA_NUM_GPU=0 ollama serve`, or
 3. Switch to Option B (HuggingFace Inference API) — no GPU needed.
 
-### "Repository is X MB, exceeds 50 MB limit"
+### "Repository is X MB, exceeds 150 MB limit"
 
 The repo is too big for a GitHub clone. Use a smaller repo, index it as a
 **local path** (no limit), or raise the cap in `rag/repo_parser.py` (look for
@@ -963,7 +963,7 @@ codebase-qa/
 
 - **Public GitHub URLs only** — no GitHub authentication; private repos won't
   clone (local paths always work).
-- **GitHub clones up to 50 MB** — larger repos are rejected to avoid timeouts
+- **GitHub clones up to 150 MB** — larger repos are rejected to avoid timeouts
   (local paths have no limit).
 - **Deep Analysis needs a tool-calling provider** — Ollama or
   `huggingface_api`; the local `huggingface` pipeline supports Quick mode

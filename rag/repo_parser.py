@@ -64,7 +64,7 @@ SKIP_DIRS = {
     "target",
 }
 
-MAX_REPO_SIZE_MB = 50
+MAX_REPO_SIZE_MB = 150
 
 
 def validate_github_url(url: str) -> str:
